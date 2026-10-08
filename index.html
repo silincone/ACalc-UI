@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Attendance Calculator</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <h1>Attendance Calculator</h1>
+      <button id="target-button" class="button" type="button" disabled>
+        Target attendance: <strong id="target-value">-</strong>
+      </button>
+    </header>
+
+    <p id="startup-error" class="banner" role="alert" hidden></p>
+
+    <section aria-labelledby="summary-heading">
+      <h2 id="summary-heading" class="section-title">Summary</h2>
+      <div id="attendance-summary" class="stack"></div>
+    </section>
+
+    <section aria-labelledby="subjects-heading">
+      <div class="section-header">
+        <h2 id="subjects-heading" class="section-title">Subjects</h2>
+        <button id="add-subject-button" class="button button-primary" type="button" disabled>Add subject</button>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col" class="numeric">Attended</th>
+              <th scope="col" class="numeric">Conducted</th>
+              <th scope="col" class="actions"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="subject-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="subject-dialog" aria-labelledby="subject-dialog-title">
+    <form id="subject-form" method="dialog" novalidate>
+      <h2 id="subject-dialog-title">Add subject</h2>
+
+      <div class="field">
+        <label for="subject-name">Subject name</label>
+        <div class="input-row">
+          <input type="text" id="subject-name" autocomplete="off" placeholder="e.g. Mathematics" aria-describedby="subject-name-error" />
+          <button type="button" id="rename-button" class="button button-small" hidden>Rename</button>
+        </div>
+        <p id="subject-name-error" class="field-error" role="alert" hidden></p>
+      </div>
+
+      <div class="field">
+        <label for="classes-attended">Classes attended</label>
+        <input type="number" id="classes-attended" min="0" step="1" value="0" inputmode="numeric" aria-describedby="subject-counts-error" />
+      </div>
+
+      <div class="field">
+        <label for="classes-conducted">Classes conducted</label>
+        <input type="number" id="classes-conducted" min="0" step="1" value="0" inputmode="numeric" aria-describedby="subject-counts-error" />
+        <p id="subject-counts-error" class="field-error" role="alert" hidden></p>
+      </div>
+
+      <div class="dialog-actions">
+        <button type="button" class="button" data-close-dialog>Cancel</button>
+        <button type="submit" class="button button-primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="target-dialog" aria-labelledby="target-dialog-title">
+    <form id="target-form" method="dialog" novalidate>
+      <h2 id="target-dialog-title">Target attendance</h2>
+
+      <div class="field">
+        <label for="target-input">Percentage</label>
+        <input type="number" id="target-input" step="any" inputmode="decimal" aria-describedby="target-hint target-error" />
+        <p id="target-hint" class="hint"></p>
+        <p id="target-error" class="field-error" role="alert" hidden></p>
+      </div>
+
+      <div class="dialog-actions">
+        <button type="button" class="button" data-close-dialog>Cancel</button>
+        <button type="submit" class="button button-primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="build-wasm/acalc.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
