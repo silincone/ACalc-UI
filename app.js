@@ -1,20 +1,40 @@
 "use strict";
 
+/* ---------- Configuration ---------- */
+
+/** Attendance below this percentage makes a subject's progress bar red. */
+const ELIGIBILITY_PERCENTAGE = 75;
+const FINE_FREE_PERCENTAGE = 85;
+
 /**
  * Reference thresholds shown in every subject's details.
  * Each value must lie within the target range accepted by the core.
  */
 const POLICY_THRESHOLDS = [
-  { label: "Exam eligibility", value: 75 },
-  { label: "Fine-free", value: 85 },
+  { label: "Exam eligibility", value: ELIGIBILITY_PERCENTAGE },
+  { label: "Fine-free", value: FINE_FREE_PERCENTAGE },
 ];
 
+const ICONS = {
+  edit: "\uE70F",
+  remove: "\uE74D",
+  cancel: "\uE711",
+  chevron: "\uE70D",
+  aboutClosed: "\uEB51",
+  aboutOpen: "\uEB52",
+};
+
+/* ---------- State and DOM references ---------- */
+
 const state = {
-  core: null,          // initialized WebAssembly module
-  register: null,      // AttendanceRegister instance
-  target: 0,           // current target attendance percentage
-  subjects: [],        // plain-object snapshot of the register
-  editingName: null,   // name of the subject being edited, or null when adding
+  core: null,           // initialized WebAssembly module
+  register: null,       // AttendanceRegister instance
+  target: 0,            // current target attendance percentage
+  subjects: [],         // plain-object snapshot of the register
+  expanded: new Set(),  // names of subjects whose details are open
+  editingName: null,    // subject being edited, or null when adding
+  renaming: false,      // whether the name field is unlocked in the edit dialog
+  deletingName: null,   // subject awaiting delete confirmation
 };
 
 const touched = { name: false, attended: false, conducted: false };
@@ -22,21 +42,30 @@ const touched = { name: false, attended: false, conducted: false };
 const $ = (id) => document.getElementById(id);
 const dom = {
   startupError: $("startup-error"),
-  summary: $("attendance-summary"),
-  tableBody: $("subject-table-body"),
+  list: $("subject-list"),
   targetButton: $("target-button"),
   targetValue: $("target-value"),
   addButton: $("add-subject-button"),
+  aboutButton: $("about-button"),
+  aboutIcon: $("about-icon"),
+  aboutDialog: $("about-dialog"),
+  aboutEligibility: $("about-eligibility"),
 
   subjectDialog: $("subject-dialog"),
   subjectForm: $("subject-form"),
   subjectTitle: $("subject-dialog-title"),
   name: $("subject-name"),
   renameButton: $("rename-button"),
+  renameIcon: $("rename-icon"),
   attended: $("classes-attended"),
   conducted: $("classes-conducted"),
   nameError: $("subject-name-error"),
   countsError: $("subject-counts-error"),
+
+  deleteDialog: $("delete-dialog"),
+  deleteForm: $("delete-form"),
+  deleteMessage: $("delete-message"),
+  deleteError: $("delete-error"),
 
   targetDialog: $("target-dialog"),
   targetForm: $("target-form"),
@@ -57,6 +86,9 @@ function createElement(tag, { className, text, attributes } = {}, ...children) {
   node.append(...children);
   return node;
 }
+
+const createIcon = (glyph, extraClass = "") =>
+  createElement("span", { className: `icon ${extraClass}`.trim(), text: glyph, attributes: { "aria-hidden": "true" } });
 
 const formatPercent = (value) => (Number.isFinite(value) ? `${value.toFixed(2)}%` : "–");
 
@@ -81,6 +113,11 @@ function errorArea(outcome) {
 function showBanner(message) {
   dom.startupError.textContent = message;
   dom.startupError.hidden = false;
+}
+
+function progressStatus(subject) {
+  if (subject.current < ELIGIBILITY_PERCENTAGE) return "critical";
+  return subject.required === 0 ? "met" : "warning";
 }
 
 /** Copies everything the UI needs out of the core and releases every native handle. */
@@ -121,109 +158,148 @@ function readSubjects() {
 function refresh() {
   state.subjects = readSubjects();
   dom.targetValue.textContent = formatTarget(state.target);
-  renderSummary();
-  renderTable();
+  renderSubjects();
 }
 
 function describeThreshold(metrics) {
-  if (!metrics) return "-";
+  if (!metrics) return "–";
   if (metrics.classesNeeded > 0) return `Attend ${metrics.classesNeeded} more`;
   if (metrics.classesOverflow > 0) return `Can miss ${metrics.classesOverflow}`;
   return "Exactly at threshold";
 }
 
-function renderSummary() {
-  dom.summary.replaceChildren();
+function buildCard(subject, index) {
+  const expanded = state.expanded.has(subject.name);
+  const bodyId = `subject-details-${index}`;
+  const width = Number.isFinite(subject.current) ? Math.min(100, Math.max(0, subject.current)) : 0;
 
-  if (state.subjects.length === 0) {
-    dom.summary.append(
-      createElement("p", { className: "empty-state", text: "Add a subject to compare your attendance with the target." }),
-    );
-    return;
-  }
+  const fill = createElement("span", { className: "progress-fill" });
+  fill.style.width = `${width}%`;
 
-  const row = (label, value) => [createElement("dt", { text: label }), createElement("dd", { text: value })];
+  const toggle = createElement(
+    "button",
+    {
+      className: "card-toggle",
+      attributes: {
+        type: "button",
+        "data-action": "toggle",
+        "data-subject": subject.name,
+        "aria-expanded": String(expanded),
+        "aria-controls": bodyId,
+      },
+    },
+    createElement(
+      "span",
+      { className: "card-title-row" },
+      createElement("span", { className: "card-name", text: subject.name }),
+      createIcon(ICONS.chevron, "chevron"),
+    ),
+    createElement(
+      "span",
+      { className: "card-progress-row" },
+      createElement("span", { className: "progress", attributes: { "aria-hidden": "true" } }, fill),
+      createElement("span", { className: "progress-value", text: formatPercent(subject.current) }),
+    ),
+  );
 
-  for (const subject of state.subjects) {
-    const width = Number.isFinite(subject.current) ? Math.min(100, Math.max(0, subject.current)) : 0;
-    const progressFill = createElement("span");
-    progressFill.style.width = `${width}%`;
-
-    const card = createElement(
-      "details",
-      { className: subject.required === 0 ? "card target-met" : "card" },
-      createElement(
-        "summary",
-        {},
-        createElement("span", { className: "card-name", text: subject.name }),
-        createElement("span", { className: "card-percentage", text: formatPercent(subject.current) }),
-        createElement("span", { className: "progress", attributes: { "aria-hidden": "true" } }, progressFill),
-      ),
-      createElement(
-        "div",
-        { className: "card-body" },
-        createElement(
-          "dl",
-          {},
-          ...row("Current", formatPercent(subject.current)),
-          ...row("Shortfall to target", formatPercent(subject.required)),
-          ...row("Above target", formatPercent(subject.excess)),
-          ...row("Classes to attend", String(subject.needed)),
-          ...row("Classes you can miss", String(subject.overflow)),
-        ),
-        createElement("h3", { text: "Policy thresholds" }),
-        createElement(
-          "dl",
-          {},
-          ...subject.thresholds.flatMap((threshold) =>
-            row(`${threshold.label} (${threshold.value}%)`, describeThreshold(threshold.metrics)),
-          ),
-        ),
-      ),
-    );
-    dom.summary.append(card);
-  }
-}
-
-function renderTable() {
-  dom.tableBody.replaceChildren();
-
-  if (state.subjects.length === 0) {
-    const cell = createElement("td", { className: "empty-state", text: "No subjects yet.", attributes: { colspan: "4" } });
-    dom.tableBody.append(createElement("tr", {}, cell));
-    return;
-  }
-
-  for (const subject of state.subjects) {
-    const actionButton = (action, label, extraClass = "") =>
-      createElement("button", {
-        className: `button button-small ${extraClass}`.trim(),
-        text: label,
+  const actionButton = (action, glyph, label, variant = "") =>
+    createElement(
+      "button",
+      {
+        className: `icon-button icon-button-small ${variant}`.trim(),
         attributes: {
           type: "button",
           "data-action": action,
           "data-subject": subject.name,
-          "aria-label": `${label} ${subject.name}`,
+          title: label,
+          "aria-label": `${label}: ${subject.name}`,
         },
-      });
-
-    dom.tableBody.append(
-      createElement(
-        "tr",
-        {},
-        createElement("td", { className: "name-cell", text: subject.name }),
-        createElement("td", { className: "numeric", text: String(subject.attended) }),
-        createElement("td", { className: "numeric", text: String(subject.conducted) }),
-        createElement(
-          "td",
-          { className: "actions" },
-          actionButton("edit", "Edit"),
-          " ",
-          actionButton("delete", "Delete", "button-danger"),
-        ),
-      ),
+      },
+      createIcon(glyph),
     );
+
+  const row = (label, value) => [createElement("dt", { text: label }), createElement("dd", { text: value })];
+
+  const countItem = (label, value) =>
+    createElement("span", { className: "card-count" }, `${label}: `, createElement("strong", { text: String(value) }));
+
+  const body = createElement(
+    "div",
+    { className: "card-body", attributes: { id: bodyId } },
+    createElement(
+      "dl",
+      {},
+      ...row("Current", formatPercent(subject.current)),
+      ...row("Shortfall to target", formatPercent(subject.required)),
+      ...row("Above target", formatPercent(subject.excess)),
+      ...row("Classes to attend", String(subject.needed)),
+      ...row("Classes you can miss", String(subject.overflow)),
+    ),
+    createElement("h3", { text: "Policy thresholds" }),
+    createElement(
+      "dl",
+      {},
+      ...subject.thresholds.flatMap((threshold) =>
+        row(`${threshold.label} (${threshold.value}%)`, describeThreshold(threshold.metrics)),
+      ),
+    ),
+  );
+  body.hidden = !expanded;
+
+  const header = createElement(
+    "div",
+    { className: "card-header" },
+    toggle,
+    createElement(
+      "div",
+      { className: "card-footer" },
+      createElement(
+        "p",
+        { className: "card-counts" },
+        countItem("Attended", subject.attended),
+        countItem("Conducted", subject.conducted),
+      ),
+      createElement(
+        "div",
+        { className: "card-buttons" },
+        actionButton("edit", ICONS.edit, "Edit subject"),
+        actionButton("delete", ICONS.remove, "Delete subject", "icon-button-danger"),
+      ),
+    ),
+  );
+
+  return createElement(
+    "article",
+    { className: `card status-${progressStatus(subject)}${expanded ? " expanded" : ""}` },
+    header,
+    body,
+  );
+}
+
+function renderSubjects() {
+  dom.list.replaceChildren();
+
+  if (state.subjects.length === 0) {
+    dom.list.append(
+      createElement("p", { className: "empty-state", text: "No subjects yet. Use the + button to add one." }),
+    );
+    return;
   }
+
+  state.subjects.forEach((subject, index) => dom.list.append(buildCard(subject, index)));
+}
+
+function toggleCard(button, subjectName) {
+  const card = button.closest(".card");
+  const body = card.querySelector(".card-body");
+  const expanded = button.getAttribute("aria-expanded") !== "true";
+
+  button.setAttribute("aria-expanded", String(expanded));
+  card.classList.toggle("expanded", expanded);
+  body.hidden = !expanded;
+
+  if (expanded) state.expanded.add(subjectName);
+  else state.expanded.delete(subjectName);
 }
 
 /* ---------- Subject form ---------- */
@@ -298,8 +374,35 @@ function validateSubjectForm({ force = false } = {}) {
   return valid;
 }
 
+function updateRenameButton() {
+  dom.renameIcon.textContent = state.renaming ? ICONS.cancel : ICONS.edit;
+  const label = state.renaming ? "Cancel rename" : "Rename subject";
+  dom.renameButton.title = label;
+  dom.renameButton.setAttribute("aria-label", label);
+}
+
+function toggleRename() {
+  if (!state.renaming) {
+    state.renaming = true;
+    dom.name.readOnly = false;
+    updateRenameButton();
+    dom.name.focus();
+    dom.name.select();
+    return;
+  }
+
+  // Cancel: restore the original name and lock the field again.
+  state.renaming = false;
+  dom.name.value = state.editingName;
+  dom.name.readOnly = true;
+  touched.name = false;
+  updateRenameButton();
+  validateSubjectForm();
+}
+
 function openSubjectDialog(subject) {
   state.editingName = subject ? subject.name : null;
+  state.renaming = false;
   touched.name = touched.attended = touched.conducted = false;
   clearSubjectErrors();
 
@@ -307,18 +410,12 @@ function openSubjectDialog(subject) {
   dom.name.value = subject ? subject.name : "";
   dom.name.readOnly = Boolean(subject); // locked until the user chooses to rename
   dom.renameButton.hidden = !subject;
+  updateRenameButton();
   dom.attended.value = subject ? subject.attended : 0;
   dom.conducted.value = subject ? subject.conducted : 0;
 
   dom.subjectDialog.showModal();
   (subject ? dom.attended : dom.name).focus();
-}
-
-function unlockName() {
-  dom.name.readOnly = false;
-  dom.renameButton.hidden = true;
-  dom.name.focus();
-  dom.name.select();
 }
 
 function handleSubjectSubmit(event) {
@@ -341,18 +438,38 @@ function handleSubjectSubmit(event) {
     return;
   }
 
+  // Keep the card open after a rename.
+  if (isEditing && name !== state.editingName && state.expanded.delete(state.editingName)) {
+    state.expanded.add(name);
+  }
+
   dom.subjectDialog.close();
   refresh();
 }
 
-function deleteSubject(subject) {
-  if (!window.confirm(`Delete "${subject.name}"?`)) return;
+/* ---------- Delete dialog ---------- */
 
-  const outcome = toOutcome(state.register.remove(subject.name));
+function openDeleteDialog(subject) {
+  state.deletingName = subject.name;
+  dom.deleteMessage.textContent = `Delete “${subject.name}”? This cannot be undone.`;
+  dom.deleteError.hidden = true;
+  dom.deleteError.textContent = "";
+  dom.deleteDialog.showModal();
+}
+
+function handleDeleteSubmit(event) {
+  event.preventDefault();
+
+  const outcome = toOutcome(state.register.remove(state.deletingName));
   if (!outcome.ok) {
-    showBanner(outcome.message);
+    dom.deleteError.textContent = outcome.message;
+    dom.deleteError.hidden = false;
     return;
   }
+
+  state.expanded.delete(state.deletingName);
+  state.deletingName = null;
+  dom.deleteDialog.close();
   refresh();
 }
 
@@ -414,6 +531,23 @@ function handleTargetSubmit(event) {
 
 /* ---------- Setup ---------- */
 
+/** Wiring that does not depend on the WebAssembly module. */
+function bindStaticEvents() {
+  dom.aboutEligibility.textContent = `${ELIGIBILITY_PERCENTAGE}%`;
+
+  dom.aboutButton.addEventListener("click", () => {
+    dom.aboutIcon.textContent = ICONS.aboutOpen;
+    dom.aboutDialog.showModal();
+  });
+  dom.aboutDialog.addEventListener("close", () => {
+    dom.aboutIcon.textContent = ICONS.aboutClosed;
+  });
+
+  for (const button of document.querySelectorAll("[data-close-dialog]")) {
+    button.addEventListener("click", () => button.closest("dialog").close());
+  }
+}
+
 function configureInputs() {
   const { MAX_CLASSES, MIN_DESIRED_PERCENTAGE, MAX_DESIRED_PERCENTAGE } = state.core;
 
@@ -424,12 +558,24 @@ function configureInputs() {
   dom.targetHint.textContent = `Allowed range: ${MIN_DESIRED_PERCENTAGE}% to ${MAX_DESIRED_PERCENTAGE}%.`;
 }
 
-function bindEvents() {
+function bindApplicationEvents() {
   dom.addButton.addEventListener("click", () => openSubjectDialog(null));
   dom.targetButton.addEventListener("click", openTargetDialog);
-  dom.renameButton.addEventListener("click", unlockName);
+  dom.renameButton.addEventListener("click", toggleRename);
+
+  // Keyboard shortcut: N opens "Add subject" unless the user is typing or a dialog is open.
+  document.addEventListener("keydown", (event) => {
+    if (event.key.toLowerCase() !== "n" || event.repeat) return;
+    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (dom.addButton.disabled || document.querySelector("dialog[open]")) return;
+    if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]")) return;
+
+    event.preventDefault();
+    openSubjectDialog(null);
+  });
 
   dom.subjectForm.addEventListener("submit", handleSubjectSubmit);
+  dom.deleteForm.addEventListener("submit", handleDeleteSubmit);
   dom.targetForm.addEventListener("submit", handleTargetSubmit);
 
   dom.name.addEventListener("input", () => {
@@ -444,23 +590,27 @@ function bindEvents() {
   }
   dom.targetInput.addEventListener("input", validateTarget);
 
-  for (const button of document.querySelectorAll("[data-close-dialog]")) {
-    button.addEventListener("click", () => button.closest("dialog").close());
-  }
-
-  dom.tableBody.addEventListener("click", (event) => {
+  dom.list.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-action]");
     if (!button) return;
 
-    const subject = state.subjects.find((item) => item.name === button.dataset.subject);
+    const name = button.dataset.subject;
+    if (button.dataset.action === "toggle") {
+      toggleCard(button, name);
+      return;
+    }
+
+    const subject = state.subjects.find((item) => item.name === name);
     if (!subject) return;
 
     if (button.dataset.action === "edit") openSubjectDialog(subject);
-    else deleteSubject(subject);
+    else openDeleteDialog(subject);
   });
 }
 
 async function initialize() {
+  bindStaticEvents();
+
   try {
     if (typeof ACalcModule !== "function") {
       throw new Error("The WebAssembly module was not found. Check that build-wasm/acalc.js loaded.");
@@ -471,7 +621,7 @@ async function initialize() {
     state.target = state.core.DESIRED_PERCENTAGE;
 
     configureInputs();
-    bindEvents();
+    bindApplicationEvents();
     dom.addButton.disabled = false;
     dom.targetButton.disabled = false;
     refresh();
