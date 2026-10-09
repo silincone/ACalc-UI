@@ -1,0 +1,11 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "emscripten",
+      "generator": "MinGW Makefiles",
+      "binaryDir": "${sourceDir}/build-wasm",
+      "toolchainFile": "C:/dev/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
+    }
+  ]
+}
