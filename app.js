@@ -15,21 +15,14 @@ const POLICY_THRESHOLDS = [
   { label: "Fine-free", value: FINE_FREE_PERCENTAGE },
 ];
 
-const ICONS = {
-  edit: "\uE70F",
-  remove: "\uE74D",
-  cancel: "\uE711",
-  chevron: "\uE70D",
-  aboutClosed: "\uEB51",
-  aboutOpen: "\uEB52",
-};
-
 /* ---------- State and DOM references ---------- */
 
 const state = {
   core: null,           // initialized WebAssembly module
   register: null,       // AttendanceRegister instance
   target: 0,            // current target attendance percentage
+  targetOptions: [],    // percentages the slider can snap to, ascending
+  draggingTarget: false,
   subjects: [],         // plain-object snapshot of the register
   expanded: new Set(),  // names of subjects whose details are open
   editingName: null,    // subject being edited, or null when adding
@@ -43,13 +36,19 @@ const $ = (id) => document.getElementById(id);
 const dom = {
   startupError: $("startup-error"),
   list: $("subject-list"),
-  targetButton: $("target-button"),
   targetValue: $("target-value"),
+  slider: $("target-slider"),
+  sliderRail: $("slider-rail"),
+  sliderThumb: $("slider-thumb"),
   addButton: $("add-subject-button"),
   aboutButton: $("about-button"),
   aboutIcon: $("about-icon"),
   aboutDialog: $("about-dialog"),
   aboutEligibility: $("about-eligibility"),
+  statusButton: $("status-button"),
+  statusIcon: $("status-icon"),
+  statusDialog: $("status-dialog"),
+  statusContent: $("status-content"),
 
   subjectDialog: $("subject-dialog"),
   subjectForm: $("subject-form"),
@@ -67,11 +66,6 @@ const dom = {
   deleteMessage: $("delete-message"),
   deleteError: $("delete-error"),
 
-  targetDialog: $("target-dialog"),
-  targetForm: $("target-form"),
-  targetInput: $("target-input"),
-  targetHint: $("target-hint"),
-  targetError: $("target-error"),
 };
 
 /* ---------- Helpers ---------- */
@@ -87,13 +81,21 @@ function createElement(tag, { className, text, attributes } = {}, ...children) {
   return node;
 }
 
-const createIcon = (glyph, extraClass = "") =>
-  createElement("span", { className: `icon ${extraClass}`.trim(), text: glyph, attributes: { "aria-hidden": "true" } });
+/** Icons are standalone SVG files in assets/icons, applied through CSS (see styles.css). */
+function setIcon(container, name) {
+  container.dataset.icon = name;
+}
+
+const createIcon = (name, extraClass = "") =>
+  createElement("span", {
+    className: `icon ${extraClass}`.trim(),
+    attributes: { "data-icon": name, "aria-hidden": "true" },
+  });
 
 const formatPercent = (value) => (Number.isFinite(value) ? `${value.toFixed(2)}%` : "–");
 
-const formatTarget = (value) =>
-  `${value.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}%`;
+/** Compact form for the rail button, e.g. 85% or 72.5%. */
+const formatTarget = (value) => `${Number(value.toFixed(2))}%`;
 
 /** Normalizes an OperationResult or MetricsResult returned by the core. */
 function toOutcome(result) {
@@ -157,8 +159,9 @@ function readSubjects() {
 
 function refresh() {
   state.subjects = readSubjects();
-  dom.targetValue.textContent = formatTarget(state.target);
+  renderTarget();
   renderSubjects();
+  renderStatusIcon();
 }
 
 function describeThreshold(metrics) {
@@ -192,7 +195,7 @@ function buildCard(subject, index) {
       "span",
       { className: "card-title-row" },
       createElement("span", { className: "card-name", text: subject.name }),
-      createIcon(ICONS.chevron, "chevron"),
+      createIcon("chevron-down", "chevron"),
     ),
     createElement(
       "span",
@@ -202,7 +205,7 @@ function buildCard(subject, index) {
     ),
   );
 
-  const actionButton = (action, glyph, label, variant = "") =>
+  const actionButton = (action, iconName, label, variant = "") =>
     createElement(
       "button",
       {
@@ -215,7 +218,7 @@ function buildCard(subject, index) {
           "aria-label": `${label}: ${subject.name}`,
         },
       },
-      createIcon(glyph),
+      createIcon(iconName),
     );
 
   const row = (label, value) => [createElement("dt", { text: label }), createElement("dd", { text: value })];
@@ -262,8 +265,8 @@ function buildCard(subject, index) {
       createElement(
         "div",
         { className: "card-buttons" },
-        actionButton("edit", ICONS.edit, "Edit subject"),
-        actionButton("delete", ICONS.remove, "Delete subject", "icon-button-danger"),
+        actionButton("edit", "edit", "Edit subject"),
+        actionButton("delete", "delete", "Delete subject", "icon-button-danger"),
       ),
     ),
   );
@@ -375,7 +378,7 @@ function validateSubjectForm({ force = false } = {}) {
 }
 
 function updateRenameButton() {
-  dom.renameIcon.textContent = state.renaming ? ICONS.cancel : ICONS.edit;
+  setIcon(dom.renameIcon, state.renaming ? "close" : "edit");
   const label = state.renaming ? "Cancel rename" : "Rename subject";
   dom.renameButton.title = label;
   dom.renameButton.setAttribute("aria-label", label);
@@ -473,60 +476,225 @@ function handleDeleteSubmit(event) {
   refresh();
 }
 
-/* ---------- Target form ---------- */
+/* ---------- Target slider ---------- */
 
-function clearTargetError() {
-  dom.targetError.hidden = true;
-  dom.targetError.textContent = "";
-  dom.targetInput.removeAttribute("aria-invalid");
+/** Spacing between the snap marks, in percentage points. */
+const TARGET_STEP = 5;
+
+/** The slider track runs from SLIDER_MIN percent at the bottom to SLIDER_MAX percent at the top. */
+const SLIDER_MIN = 50;
+const SLIDER_MAX = 100;
+const toTrackPosition = (percentage) => ((percentage - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN)) * 100;
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+function nearestTarget(value) {
+  return state.targetOptions.reduce((best, option) =>
+    Math.abs(option - value) < Math.abs(best - value) ? option : best,
+  );
 }
 
-function showTargetError(message) {
-  dom.targetError.textContent = message;
-  dom.targetError.hidden = false;
-  dom.targetInput.setAttribute("aria-invalid", "true");
+/** Draws the slider. While dragging, `position` can fall between two marks. */
+function renderTarget(position = state.target) {
+  dom.slider.style.setProperty("--position", String(toTrackPosition(position)));
+  dom.targetValue.textContent = formatTarget(nearestTarget(position));
+  dom.slider.setAttribute("aria-valuenow", String(state.target));
+  dom.slider.setAttribute("aria-valuetext", formatTarget(state.target));
 }
 
-/** Returns the entered percentage, or null after showing an error. */
-function validateTarget() {
-  clearTargetError();
-  const value = dom.targetInput.valueAsNumber;
-
-  if (!Number.isFinite(value)) {
-    showTargetError("Enter a valid number.");
-    return null;
+function commitTarget(value) {
+  if (value === state.target) {
+    renderTarget();
+    return;
   }
-
-  const outcome = toOutcome(state.core.validateDesiredPercentage(value));
-  if (!outcome.ok) {
-    showTargetError(outcome.message);
-    return null;
-  }
-  return value;
-}
-
-function openTargetDialog() {
-  clearTargetError();
-  dom.targetInput.value = state.target;
-  dom.targetDialog.showModal();
-  dom.targetInput.select();
-}
-
-function handleTargetSubmit(event) {
-  event.preventDefault();
-
-  const value = validateTarget();
-  if (value === null) return;
 
   const outcome = toOutcome(state.register.setDesiredPercentage(value));
   if (!outcome.ok) {
-    showTargetError(outcome.message);
+    showBanner(outcome.message);
+    renderTarget();
     return;
   }
 
   state.target = value;
-  dom.targetDialog.close();
   refresh();
+}
+
+/** Converts the pointer height into a percentage; the thumb only travels between the first and last mark. */
+function targetFromPointer(event) {
+  const rect = dom.sliderRail.getBoundingClientRect();
+  const fraction = 1 - (event.clientY - rect.top) / rect.height;
+  const percentage = SLIDER_MIN + fraction * (SLIDER_MAX - SLIDER_MIN);
+  return clamp(percentage, state.targetOptions[0], state.targetOptions.at(-1));
+}
+
+function handleSliderKeydown(event) {
+  const last = state.targetOptions.length - 1;
+  const index = state.targetOptions.indexOf(state.target);
+  let next;
+
+  switch (event.key) {
+    case "ArrowUp":
+    case "ArrowRight":
+    case "PageUp":
+      next = index + 1;
+      break;
+    case "ArrowDown":
+    case "ArrowLeft":
+    case "PageDown":
+      next = index - 1;
+      break;
+    case "Home":
+      next = 0;
+      break;
+    case "End":
+      next = last;
+      break;
+    default:
+      return;
+  }
+
+  event.preventDefault();
+  commitTarget(state.targetOptions[clamp(next, 0, last)]);
+}
+
+function bindTargetSlider() {
+  const stopDragging = () => {
+    state.draggingTarget = false;
+    dom.slider.classList.remove("is-dragging");
+  };
+
+  dom.slider.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    dom.slider.setPointerCapture(event.pointerId);
+    dom.slider.focus();
+    state.draggingTarget = true;
+    dom.slider.classList.add("is-dragging");
+    renderTarget(targetFromPointer(event));
+  });
+
+  dom.slider.addEventListener("pointermove", (event) => {
+    if (state.draggingTarget) renderTarget(targetFromPointer(event));
+  });
+
+  dom.slider.addEventListener("pointerup", (event) => {
+    if (!state.draggingTarget) return;
+    stopDragging();
+    commitTarget(nearestTarget(targetFromPointer(event)));
+  });
+
+  dom.slider.addEventListener("pointercancel", () => {
+    stopDragging();
+    renderTarget();
+  });
+
+  dom.slider.addEventListener("keydown", handleSliderKeydown);
+}
+
+/** Builds the snap marks from the core's allowed range and picks the starting target. */
+function initializeTarget() {
+  const { MIN_DESIRED_PERCENTAGE, MAX_DESIRED_PERCENTAGE, DESIRED_PERCENTAGE } = state.core;
+
+  state.targetOptions = [];
+  for (let value = MIN_DESIRED_PERCENTAGE; value <= MAX_DESIRED_PERCENTAGE; value += TARGET_STEP) {
+    state.targetOptions.push(value);
+  }
+
+  for (const option of state.targetOptions) {
+    const mark = createElement("span", { className: "slider-mark" });
+    mark.style.setProperty("--position", String(toTrackPosition(option)));
+    dom.sliderRail.insertBefore(mark, dom.sliderThumb);
+  }
+
+  dom.slider.setAttribute("aria-valuemin", String(state.targetOptions[0]));
+  dom.slider.setAttribute("aria-valuemax", String(state.targetOptions.at(-1)));
+  dom.slider.removeAttribute("aria-disabled");
+  dom.slider.classList.remove("is-disabled");
+
+  state.target = nearestTarget(DESIRED_PERCENTAGE);
+  if (state.target !== DESIRED_PERCENTAGE) {
+    toOutcome(state.register.setDesiredPercentage(state.target));
+  }
+}
+
+/* ---------- Attendance status ---------- */
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+const STATUS_GROUPS = [
+  { status: "critical", label: () => `Below ${ELIGIBILITY_PERCENTAGE}%` },
+  { status: "warning", label: () => `Below your ${formatTarget(state.target)} target` },
+  { status: "met", label: () => "Target reached" },
+];
+
+const countByStatus = () =>
+  Object.fromEntries(STATUS_GROUPS.map(({ status }) => [status, state.subjects.filter((s) => progressStatus(s) === status).length]));
+
+/** Draws a ring with one dot per subject, colored by that subject's status. */
+function renderStatusIcon() {
+  const count = state.subjects.length;
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", "status-icon");
+  svg.setAttribute("focusable", "false");
+
+  const ringRadius = 9;
+  if (count === 0) {
+    const ring = document.createElementNS(SVG_NS, "circle");
+    ring.setAttribute("class", "status-empty");
+    ring.setAttribute("cx", "12");
+    ring.setAttribute("cy", "12");
+    ring.setAttribute("r", String(ringRadius));
+    svg.append(ring);
+  } else {
+    const dotRadius = clamp(((2 * Math.PI * ringRadius) / count) * 0.38, 0.8, 2.4);
+    state.subjects.forEach((subject, index) => {
+      const angle = -Math.PI / 2 + (2 * Math.PI * index) / count; // first dot at the top, clockwise
+      const dot = document.createElementNS(SVG_NS, "circle");
+      dot.setAttribute("class", `dot dot-${progressStatus(subject)}`);
+      dot.setAttribute("cx", (12 + ringRadius * Math.cos(angle)).toFixed(2));
+      dot.setAttribute("cy", (12 + ringRadius * Math.sin(angle)).toFixed(2));
+      dot.setAttribute("r", dotRadius.toFixed(2));
+      svg.append(dot);
+    });
+  }
+  dom.statusIcon.replaceChildren(svg);
+
+  const counts = countByStatus();
+  dom.statusButton.setAttribute(
+    "aria-label",
+    count === 0
+      ? "Attendance status: no subjects"
+      : `Attendance status: ${counts.critical} below ${ELIGIBILITY_PERCENTAGE}%, ${counts.warning} below target, ${counts.met} on target`,
+  );
+}
+
+function openStatusDialog() {
+  dom.statusContent.replaceChildren();
+
+  if (state.subjects.length === 0) {
+    dom.statusContent.append(createElement("p", { className: "empty-state", text: "No subjects yet." }));
+  } else {
+    const total = state.subjects.length;
+    dom.statusContent.append(createElement("p", { className: "status-total", text: `${total} ${total === 1 ? "subject" : "subjects"}` }));
+
+    for (const group of STATUS_GROUPS) {
+      const names = state.subjects.filter((subject) => progressStatus(subject) === group.status).map((subject) => subject.name);
+      dom.statusContent.append(
+        createElement(
+          "div",
+          { className: "status-row" },
+          createElement("span", { className: `status-dot dot-${group.status}` }),
+          createElement("span", { className: "status-label", text: group.label() }),
+          createElement("strong", { className: "status-count", text: String(names.length) }),
+        ),
+      );
+      if (names.length > 0) {
+        dom.statusContent.append(createElement("p", { className: "status-names", text: names.join(", ") }));
+      }
+    }
+  }
+
+  dom.statusDialog.showModal();
 }
 
 /* ---------- Setup ---------- */
@@ -536,11 +704,11 @@ function bindStaticEvents() {
   dom.aboutEligibility.textContent = `${ELIGIBILITY_PERCENTAGE}%`;
 
   dom.aboutButton.addEventListener("click", () => {
-    dom.aboutIcon.textContent = ICONS.aboutOpen;
+    setIcon(dom.aboutIcon, "heart-filled");
     dom.aboutDialog.showModal();
   });
   dom.aboutDialog.addEventListener("close", () => {
-    dom.aboutIcon.textContent = ICONS.aboutClosed;
+    setIcon(dom.aboutIcon, "heart");
   });
 
   for (const button of document.querySelectorAll("[data-close-dialog]")) {
@@ -549,19 +717,17 @@ function bindStaticEvents() {
 }
 
 function configureInputs() {
-  const { MAX_CLASSES, MIN_DESIRED_PERCENTAGE, MAX_DESIRED_PERCENTAGE } = state.core;
+  const { MAX_CLASSES } = state.core;
 
   dom.attended.max = MAX_CLASSES;
   dom.conducted.max = MAX_CLASSES;
-  dom.targetInput.min = MIN_DESIRED_PERCENTAGE;
-  dom.targetInput.max = MAX_DESIRED_PERCENTAGE;
-  dom.targetHint.textContent = `Allowed range: ${MIN_DESIRED_PERCENTAGE}% to ${MAX_DESIRED_PERCENTAGE}%.`;
 }
 
 function bindApplicationEvents() {
   dom.addButton.addEventListener("click", () => openSubjectDialog(null));
-  dom.targetButton.addEventListener("click", openTargetDialog);
+  bindTargetSlider();
   dom.renameButton.addEventListener("click", toggleRename);
+  dom.statusButton.addEventListener("click", openStatusDialog);
 
   // Keyboard shortcut: N opens "Add subject" unless the user is typing or a dialog is open.
   document.addEventListener("keydown", (event) => {
@@ -576,7 +742,6 @@ function bindApplicationEvents() {
 
   dom.subjectForm.addEventListener("submit", handleSubjectSubmit);
   dom.deleteForm.addEventListener("submit", handleDeleteSubmit);
-  dom.targetForm.addEventListener("submit", handleTargetSubmit);
 
   dom.name.addEventListener("input", () => {
     touched.name = true;
@@ -588,7 +753,6 @@ function bindApplicationEvents() {
       validateSubjectForm();
     });
   }
-  dom.targetInput.addEventListener("input", validateTarget);
 
   dom.list.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-action]");
@@ -618,12 +782,12 @@ async function initialize() {
 
     state.core = await ACalcModule();
     state.register = new state.core.AttendanceRegister();
-    state.target = state.core.DESIRED_PERCENTAGE;
+    initializeTarget();
 
     configureInputs();
     bindApplicationEvents();
     dom.addButton.disabled = false;
-    dom.targetButton.disabled = false;
+    dom.statusButton.disabled = false;
     refresh();
   } catch (error) {
     console.error("Initialization failed:", error);
