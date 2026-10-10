@@ -229,12 +229,11 @@ function buildCard(subject, index) {
   const body = createElement(
     "div",
     { className: "card-body", attributes: { id: bodyId } },
+    createElement("dl", {}, ...row("Current percentage", formatPercent(subject.current))),
+    createElement("h3", { text: `Target outcomes (${formatTarget(state.target)})` }),
     createElement(
       "dl",
       {},
-      ...row("Current", formatPercent(subject.current)),
-      ...row("Shortfall to target", formatPercent(subject.required)),
-      ...row("Above target", formatPercent(subject.excess)),
       ...row("Classes to attend", String(subject.needed)),
       ...row("Classes you can miss", String(subject.overflow)),
     ),
