@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Attendance Calculator">
+  <defs>
+    <linearGradient id="accent-gradient" gradientUnits="userSpaceOnUse" x1="8" y1="4" x2="56" y2="60">
+      <stop offset="0" stop-color="#c0409f" />
+      <stop offset="1" stop-color="#6a55f0" />
+    </linearGradient>
+  </defs>
+
+  <!-- Body -->
+  <rect x="10" y="4" width="44" height="56" rx="8" fill="none" stroke="url(#accent-gradient)" stroke-width="4" />
+
+  <!-- Display -->
+  <rect x="17" y="11" width="30" height="12" rx="3" fill="url(#accent-gradient)" />
+  <text x="42" y="20" font-size="0.5" fill="white" >ACalc</text>
+
+  <!-- Keys -->
+  <g fill="url(#accent-gradient)">
+    <rect x="17" y="29" width="8" height="7" rx="2" />
+    <rect x="28" y="29" width="8" height="7" rx="2" />
+    <rect x="39" y="29" width="8" height="7" rx="2" />
+    <rect x="17" y="38" width="8" height="7" rx="2" />
+    <rect x="28" y="38" width="8" height="7" rx="2" />
+    <rect x="17" y="47" width="8" height="7" rx="2" />
+    <rect x="28" y="47" width="8" height="7" rx="2" />
+    <rect x="39" y="38" width="8" height="16" rx="2" />
+  </g>
+</svg>
