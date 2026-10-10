@@ -17,7 +17,7 @@
   --color-danger: #c62828;
   --color-hover: rgb(0 0 0 / 0.06);
   --radius: 8px;
-  --font-icons: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+  --header-height: 56px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -59,13 +59,48 @@ h1 {
   background-clip: text;
   color: transparent;
 }
-#target-value { color: var(--color-accent); }
 dialog h2 { font-size: 1.1rem; line-height: 1.25; margin-bottom: 14px; }
 
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 
-/* Icons */
-.icon { font-family: var(--font-icons); font-style: normal; line-height: 1; }
+/* Icons: standalone SVG files in assets/icons.
+   Single-color icons are drawn as CSS masks, so they follow the text color.
+   Icons with their own colors (gradient or red artwork) are used as they are. */
+.icon {
+  display: inline-block;
+  flex: none;
+  width: 1em;
+  height: 1em;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+.icon[data-icon="edit"],
+.icon[data-icon="close"],
+.icon[data-icon="chevron-down"] {
+  background-color: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+.icon[data-icon="edit"] { -webkit-mask-image: url("assets/icons/edit.svg"); mask-image: url("assets/icons/edit.svg"); }
+.icon[data-icon="close"] { -webkit-mask-image: url("assets/icons/close.svg"); mask-image: url("assets/icons/close.svg"); }
+.icon[data-icon="chevron-down"] { -webkit-mask-image: url("assets/icons/chevron-down.svg"); mask-image: url("assets/icons/chevron-down.svg"); }
+.icon[data-icon="add"] { background-image: url("assets/icons/add.svg"); }
+.icon[data-icon="delete"] { background-image: url("assets/icons/delete.svg"); }
+.icon[data-icon="heart"] { background-image: url("assets/icons/heart.svg"); }
+.icon[data-icon="heart-filled"] { background-image: url("assets/icons/heart-filled.svg"); }
+
+.text-gradient {
+  background: var(--gradient-accent);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
 
 .icon-button {
   display: inline-grid;
@@ -77,14 +112,15 @@ dialog h2 { font-size: 1.1rem; line-height: 1.25; margin-bottom: 14px; }
   border-radius: var(--radius);
   background: transparent;
   color: var(--color-text);
-  font-size: 14px;
+  font-size: 16px;
   cursor: pointer;
 }
 .icon-button:hover:not(:disabled) { background: var(--color-hover); }
 .icon-button:disabled { opacity: 0.4; cursor: not-allowed; }
-.icon-button-large { width: 40px; height: 40px; font-size: 18px; }
-.icon-button-small { width: 32px; height: 32px; font-size: 13px; }
-.icon-button-field { width: 40px; height: auto; align-self: stretch; border-color: var(--color-border); background: var(--color-background); }
+.icon-button-large { width: 40px; height: 40px; font-size: 22px; }
+.icon-button-small { width: 32px; height: 32px; font-size: 16px; }
+.rail-top { margin-bottom: auto; }
+.icon-button-field { width: 40px; height: auto; align-self: stretch; border-color: var(--color-border); }
 
 /* Layout */
 .shell {
@@ -103,24 +139,99 @@ dialog h2 { font-size: 1.1rem; line-height: 1.25; margin-bottom: 14px; }
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  padding: 8px 0;
+  padding: 0 0 8px;
   background: var(--color-surface);
   border-left: 1px solid var(--color-border);
 }
 
-.content {
-  display: grid;
-  align-content: start;
-  gap: 20px;
-  padding: 20px 20px 48px;
-}
-
-.content-header {
+/* Target slider: a vertical version of the progress bar, from 50% at the bottom to 100% at the top */
+.target-slider { display: grid; justify-items: center; gap: 10px; width: 100%; }
+.slider-value-box {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
+  justify-content: center;
+  width: 100%;
+  height: var(--header-height);
+  border-bottom: 1px solid var(--color-border);
+}
+.slider-value { font-size: 0.9rem; line-height: 1.5; font-weight: 700; font-variant-numeric: tabular-nums; }
+.slider {
+  --position: 0;
+  --rail-free: calc(100vh - 152px); /* sidebar height left after the three buttons */
+  position: relative;
+  width: 36px;
+  height: max(120px, calc(var(--rail-free) * 0.65));
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+@supports (height: 100dvh) { .slider { --rail-free: calc(100dvh - 152px); } }
+.slider.is-disabled { opacity: 0.4; pointer-events: none; }
+.slider-rail { position: absolute; inset: 9px 0; }
+.slider-line {
+  position: absolute;
+  inset: 0 auto 0 calc(50% - 1px);
+  width: 2px;
+  border-radius: 1px;
+  background: var(--color-track);
+}
+.slider-fill {
+  position: absolute;
+  bottom: 0;
+  left: calc(50% - 2px);
+  width: 4px;
+  height: calc(var(--position) * 1%);
+  border-radius: 2px;
+  background: linear-gradient(to top, var(--color-accent-start), var(--color-accent-end));
+  transition: height 0.2s ease;
+}
+.slider-mark {
+  position: absolute;
+  left: calc(50% - 6px);
+  bottom: calc(var(--position) * 1%);
+  width: 12px;
+  height: 2px;
+  transform: translateY(50%);
+  border-radius: 1px;
+  background: var(--color-track);
+  opacity: 0.55;
+}
+.slider-thumb {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--position) * 1%);
+  width: 18px;
+  height: 18px;
+  transform: translate(-50%, 50%);
+  border: 3px solid transparent;
+  border-radius: 50%;
+  background: linear-gradient(var(--color-surface), var(--color-surface)) padding-box, var(--gradient-accent) border-box;
+  transition: bottom 0.2s ease;
+}
+.slider-thumb::after { content: ""; position: absolute; inset: 2px; border-radius: 50%; background: var(--gradient-accent); }
+.slider.is-dragging .slider-fill,
+.slider.is-dragging .slider-thumb { transition: none; }
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 0 20px 48px;
+}
+
+/* Stays visible while the subject list scrolls */
+.content-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin: 0 -20px;
+  height: var(--header-height);
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--color-background);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .stack { display: grid; gap: 10px; }
@@ -136,22 +247,15 @@ dialog h2 { font-size: 1.1rem; line-height: 1.25; margin-bottom: 14px; }
   color: var(--color-text);
   cursor: pointer;
 }
-.button:hover:not(:disabled) { border-color: var(--color-accent); }
-.button:disabled { opacity: 0.5; cursor: not-allowed; }
-.button-primary { background: var(--gradient-accent); border-color: transparent; color: var(--color-accent-contrast); }
-.button-primary:hover:not(:disabled) { border-color: transparent; filter: brightness(1.1); }
-.icon-gradient {
-  display: inline-block;
-  background: var(--gradient-accent);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
+.button:hover:not(:disabled) {
+  border-color: transparent;
+  background: linear-gradient(var(--color-surface), var(--color-surface)) padding-box, var(--gradient-accent) border-box;
 }
-.icon-button-danger { color: var(--color-danger); }
+.button:disabled { opacity: 0.5; cursor: not-allowed; }
+.button-primary { font-weight: 600; }
+.button-danger { color: var(--color-danger); }
+.button-danger:hover:not(:disabled) { border-color: var(--color-danger); background: var(--color-surface); }
 .icon-button-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--color-danger) 14%, transparent); }
-.button-danger { background: var(--color-danger); border-color: var(--color-danger); color: #ffffff; }
-.button-danger:hover:not(:disabled) { border-color: var(--color-danger); filter: brightness(1.1); }
 
 /* Messages */
 .banner {
@@ -175,7 +279,12 @@ dialog h2 { font-size: 1.1rem; line-height: 1.25; margin-bottom: 14px; }
 .card.status-critical { --progress-color: var(--color-danger); }
 .card.status-warning { --progress-color: var(--color-warning); }
 .card.status-met { --progress-color: var(--color-success); }
-.card.expanded { border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border)); }
+.card { transition: box-shadow 0.2s ease; }
+.card.expanded {
+  box-shadow:
+    -8px -6px 22px -8px color-mix(in srgb, var(--color-accent-start) 55%, transparent),
+    8px 6px 22px -8px color-mix(in srgb, var(--color-accent-end) 55%, transparent);
+}
 
 .card-header { padding: 12px 14px 8px; display: grid; gap: 6px; }
 
@@ -194,7 +303,7 @@ dialog h2 { font-size: 1.1rem; line-height: 1.25; margin-bottom: 14px; }
 
 .card-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .card-name { font-weight: 600; overflow-wrap: anywhere; }
-.chevron { font-size: 12px; color: var(--color-muted); transition: transform 0.15s ease; }
+.chevron { font-size: 16px; color: var(--color-muted); transition: transform 0.15s ease; }
 .card.expanded .chevron { transform: rotate(180deg); }
 
 .card-progress-row { display: flex; align-items: center; gap: 12px; }
@@ -309,3 +418,20 @@ kbd {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* Status ring and summary */
+.dot-critical { --dot-color: var(--color-danger); }
+.dot-warning { --dot-color: var(--color-warning); }
+.dot-met { --dot-color: var(--color-success); }
+
+.status-icon-holder { display: grid; place-items: center; }
+.status-icon { display: block; width: 26px; height: 26px; }
+.status-icon .dot { fill: var(--dot-color); }
+.status-icon .status-empty { fill: none; stroke: var(--color-muted); stroke-width: 2.4; stroke-linecap: round; stroke-dasharray: 0.1 3.6; }
+
+.status-total { margin-bottom: 12px; color: var(--color-muted); font-size: 0.95rem; }
+.status-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.status-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--dot-color); }
+.status-label { flex: 1; }
+.status-count { font-variant-numeric: tabular-nums; }
+.status-names { margin: -2px 0 6px 20px; color: var(--color-muted); font-size: 0.85rem; overflow-wrap: anywhere; }
