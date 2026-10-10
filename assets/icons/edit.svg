@@ -5,6 +5,6 @@
   fill="none" 
   stroke="#000" stroke-width="2" 
   stroke-linecap="round" stroke-linejoin="round">
-  <path d="M5.2 18.8l.85-3.825L15.825 5.2a1.802 1.802 0 0 1 2.55 2.55L8.6 17.525Z" />
-  <path d="M13.275 8.175l2.3375 2.3375" />
+  <path d="M4 20l1-4.5L16.5 4a2.12 2.12 0 0 1 3 3L8 18.5Z" />
+  <path d="M13.5 7.5l2.75 2.75" />
 </svg>
