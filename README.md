@@ -15,7 +15,8 @@ ACalc is a small web app. All the calculation logic is a header-only C++23 libra
 
 - **Per-subject tracking.** Enter classes attended and classes conducted for each subject.
 - **Clear answers.** For every subject you get the current percentage, the shortfall or surplus against your target, how many classes you must attend to reach it, and how many you can miss and still stay above it.
-- **Target slider.** A vertical slider in the side bar runs from 0% to 100% and snaps to marks every 5 points between 70% and 90% (default 85%). The selected value is shown above it. Drag it, tap a position, or use the arrow keys, Home and End.
+- **Target slider.** A vertical slider in the side bar runs from 50% to 100% and snaps to marks every 5 points between 70% and 90% (default 85%). The selected value is shown above it, level with the "Target percentage:" label in the title bar. Drag it, tap a position, or use the arrow keys, Home and End.
+- **Status overview.** A ring icon in the side bar draws one dot per subject, coloured by its status (red, amber or green). Selecting it shows how many subjects are below the eligibility threshold, below your target, or on target, with their names.
 - **Policy thresholds.** Every subject also shows the numbers for two fixed reference thresholds (75% for exam eligibility and 85% for fine-free by default).
 - **Colour-coded progress.** Red below the eligibility threshold, amber below your target, green once the target is met.
 - **Add, edit, rename and delete** subjects, with a confirmation dialog for deletion.
@@ -131,7 +132,7 @@ Operations return a plain `{ status, code, message }` object. `code` is one of:
 | What | Where |
 | --- | --- |
 | Target range, default target, class limit | `src/core.h` (`MIN_DESIRED_PERCENTAGE`, `MAX_DESIRED_PERCENTAGE`, `DESIRED_PERCENTAGE`, `MAX_CLASSES`). The UI reads these from the core. |
-| Slider snap marks | Built from the core's target range in steps of `TARGET_STEP` (5) in `app.js`. |
+| Slider snap marks and track range | Marks are built from the core's target range in steps of `TARGET_STEP` (5); the track spans `SLIDER_MIN` (50) to `SLIDER_MAX` (100). Both are in `app.js`. |
 | Policy thresholds and the red progress cut-off | `app.js` (`ELIGIBILITY_PERCENTAGE`, `FINE_FREE_PERCENTAGE`). Both must lie within the target range. |
 | Accent gradient | `styles.css` (`--color-accent-start`, `--color-accent-end`) and the artwork in `assets` |
 
