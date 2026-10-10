@@ -3,18 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Attendance Calculator</title>
-  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <title>ACalc</title>
+  <meta name="description" content="ACalc: an attendance calculator" />
+  <link rel="icon" type="image/svg+xml" href="assets/acalc.svg" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="shell">
     <main class="content">
       <header class="content-header">
-        <h1>Attendance Calculator</h1>
-        <button id="target-button" class="button" type="button" disabled>
-          Target attendance: <strong id="target-value">–</strong>
-        </button>
+        <h1>ACalc</h1>
       </header>
 
       <p id="startup-error" class="banner" role="alert" hidden></p>
@@ -24,11 +22,27 @@
     </main>
 
     <nav class="rail" aria-label="Primary">
+      <div class="target-slider rail-top">
+        <div class="slider-value-box">
+          <span id="target-value" class="slider-value text-gradient" aria-hidden="true">-</span>
+        </div>
+        <div id="target-slider" class="slider is-disabled" role="slider" tabindex="0" aria-orientation="vertical"
+             aria-label="Target attendance" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-disabled="true">
+          <div id="slider-rail" class="slider-rail">
+            <span class="slider-line"></span>
+            <span class="slider-fill"></span>
+            <span id="slider-thumb" class="slider-thumb"></span>
+          </div>
+        </div>
+      </div>
+      <button id="status-button" class="icon-button icon-button-large" type="button" title="Attendance status" aria-label="Attendance status" aria-haspopup="dialog" disabled>
+        <span id="status-icon" class="status-icon-holder" aria-hidden="true"></span>
+      </button>
       <button id="about-button" class="icon-button icon-button-large" type="button" title="About" aria-label="About" aria-haspopup="dialog">
-        <span id="about-icon" class="icon icon-gradient" aria-hidden="true">&#xEB51;</span>
+        <span id="about-icon" class="icon" data-icon="heart" aria-hidden="true"></span>
       </button>
       <button id="add-subject-button" class="icon-button icon-button-large" type="button" title="Add subject (N)" aria-label="Add subject" aria-keyshortcuts="N" disabled>
-        <span class="icon icon-gradient" aria-hidden="true">&#xE710;</span>
+        <span class="icon" data-icon="add" aria-hidden="true"></span>
       </button>
     </nav>
   </div>
@@ -43,7 +57,7 @@
         <div class="input-row">
           <input type="text" id="subject-name" autocomplete="off" placeholder="e.g. Mathematics" aria-describedby="subject-name-error" />
           <button type="button" id="rename-button" class="icon-button icon-button-field" title="Rename subject" aria-label="Rename subject" hidden>
-            <span id="rename-icon" class="icon" aria-hidden="true">&#xE70F;</span>
+            <span id="rename-icon" class="icon" data-icon="edit" aria-hidden="true"></span>
           </button>
         </div>
         <p id="subject-name-error" class="field-error" role="alert" hidden></p>
@@ -62,7 +76,7 @@
 
       <div class="dialog-actions">
         <button type="button" class="button" data-close-dialog>Cancel</button>
-        <button type="submit" class="button button-primary">Save</button>
+        <button type="submit" class="button button-primary"><span class="text-gradient">Save</span></button>
       </div>
     </form>
   </dialog>
@@ -80,30 +94,23 @@
     </form>
   </dialog>
 
-  <!-- Target attendance -->
-  <dialog id="target-dialog" aria-labelledby="target-dialog-title">
-    <form id="target-form" method="dialog" novalidate>
-      <h2 id="target-dialog-title">Target attendance</h2>
-
-      <div class="field">
-        <label for="target-input">Percentage</label>
-        <input type="number" id="target-input" step="any" inputmode="decimal" aria-describedby="target-hint target-error" />
-        <p id="target-hint" class="hint"></p>
-        <p id="target-error" class="field-error" role="alert" hidden></p>
-      </div>
-
-      <div class="dialog-actions">
-        <button type="button" class="button" data-close-dialog>Cancel</button>
-        <button type="submit" class="button button-primary">Save</button>
-      </div>
-    </form>
+  <!-- Attendance status -->
+  <dialog id="status-dialog" class="dialog-wide" aria-labelledby="status-dialog-title">
+    <h2 id="status-dialog-title">Attendance status</h2>
+    <div id="status-content"></div>
+    <div class="dialog-actions">
+      <button type="button" class="button" data-close-dialog>Close</button>
+    </div>
   </dialog>
 
   <!-- About -->
   <dialog id="about-dialog" class="dialog-wide" aria-labelledby="about-dialog-title">
     <div class="dialog-header">
-      <img src="icon.svg" alt="" class="about-icon" width="56" height="56" />
-      <h2 id="about-dialog-title">Attendance Calculator</h2>
+      <img src="assets/acalc.svg" alt="" class="about-icon" width="56" height="56" />
+      <div>
+        <h2 id="about-dialog-title">ACalc</h2>
+        <p class="hint">Attendance Calculator</p>
+      </div>
     </div>
     <p class="dialog-text">
       Track your attendance for each subject and see how many classes you still need to attend,
@@ -112,14 +119,16 @@
 
     <h3 class="dialog-subtitle">How to use</h3>
     <dl class="key-list">
-      <dt><span class="icon" aria-hidden="true">&#xE710;</span></dt>
+      <dt><span class="icon" data-icon="add" aria-hidden="true"></span></dt>
       <dd>Add a subject with its attended and conducted classes <kbd>N</kbd></dd>
-      <dt><span class="icon" aria-hidden="true">&#xE70F;</span></dt>
+      <dt><span class="icon" data-icon="edit" aria-hidden="true"></span></dt>
       <dd>Edit the class counts, or rename a subject</dd>
-      <dt><span class="icon" aria-hidden="true">&#xE74D;</span></dt>
+      <dt><span class="icon" data-icon="delete" aria-hidden="true"></span></dt>
       <dd>Delete a subject</dd>
-      <dt>Target</dt>
-      <dd>Change the attendance percentage you are aiming for</dd>
+      <dt>Ring</dt>
+      <dd>One dot per subject, coloured by its status. Select it for a summary</dd>
+      <dt>Slider</dt>
+      <dd>Drag the slider to choose the attendance percentage you are aiming for</dd>
     </dl>
 
     <h3 class="dialog-subtitle">Progress colors</h3>
