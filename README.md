@@ -155,7 +155,3 @@ The expander arrow is the single `chevron-down` icon, rotated when a card is ope
 ## Author
 
 Made with ♥ by Silicon Dioxide, [@silincone](https://github.com/silincone) on GitHub.
-
-## License
-
-Add your license here.
