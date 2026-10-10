@@ -63,6 +63,10 @@ dialog h2 { font-size: 1.1rem; line-height: 1.25; margin-bottom: 14px; }
 
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 
+/* Touch screens: no grey flash over the tapped area, and no double-tap delay */
+button, .slider { -webkit-tap-highlight-color: transparent; }
+button { touch-action: manipulation; }
+
 /* Icons: standalone SVG files in assets/icons.
    Single-color icons are drawn as CSS masks, so they follow the text color.
    Icons with their own colors (gradient or red artwork) are used as they are. */
@@ -147,12 +151,23 @@ dialog h2 { font-size: 1.1rem; line-height: 1.25; margin-bottom: 14px; }
 /* Target slider: a vertical version of the progress bar, from 50% at the bottom to 100% at the top */
 .target-slider { display: grid; justify-items: center; gap: 10px; width: 100%; }
 .slider-value-box {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
   height: var(--header-height);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid transparent; /* keeps the text level with the title bar */
+}
+.slider-value-box::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 50%;
+  width: 28px;
+  height: 1px;
+  transform: translateX(-50%);
+  background: var(--color-border);
 }
 .slider-value { font-size: 0.9rem; line-height: 1.5; font-weight: 700; font-variant-numeric: tabular-nums; }
 .slider {
@@ -301,6 +316,7 @@ dialog h2 { font-size: 1.1rem; line-height: 1.25; margin-bottom: 14px; }
   cursor: pointer;
 }
 
+.card-toggle:active { opacity: 0.85; }
 .card-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .card-name { font-weight: 600; overflow-wrap: anywhere; }
 .chevron { font-size: 16px; color: var(--color-muted); transition: transform 0.15s ease; }
