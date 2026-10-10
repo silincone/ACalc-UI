@@ -1,26 +1,27 @@
 <p align="center">
-  <img src="icon.svg" alt="Attendance Calculator icon" width="96" height="96" />
+  <img src="assets/acalc.svg" alt="ACalc icon" width="96" height="96" />
 </p>
 
-<h1 align="center">Attendance Calculator</h1>
+<h1 align="center">ACalc</h1>
 
 <p align="center">
+  <strong>Attendance Calculator</strong><br />
   Track attendance per subject and see exactly how many classes you need to attend, or can afford to miss, to stay on target.
 </p>
 
-Attendance Calculator (ACalc) is a small web app. All the calculation logic is a header-only C++23 library compiled to WebAssembly with [Emscripten](https://emscripten.org/) and [Embind](https://emscripten.org/docs/porting/connecting_cpp_and_javascript/embind.html). The interface is plain HTML, CSS and JavaScript with no frameworks and no runtime dependencies.
+ACalc is a small web app. All the calculation logic is a header-only C++23 library compiled to WebAssembly with [Emscripten](https://emscripten.org/) and [Embind](https://emscripten.org/docs/porting/connecting_cpp_and_javascript/embind.html). The interface is plain HTML, CSS and JavaScript with no frameworks and no runtime dependencies.
 
 ## Features
 
 - **Per-subject tracking.** Enter classes attended and classes conducted for each subject.
 - **Clear answers.** For every subject you get the current percentage, the shortfall or surplus against your target, how many classes you must attend to reach it, and how many you can miss and still stay above it.
-- **Adjustable target.** Choose any target from 70% to 90% (default 85%).
+- **Target slider.** A vertical slider in the side bar runs from 0% to 100% and snaps to marks every 5 points between 70% and 90% (default 85%). The selected value is shown above it. Drag it, tap a position, or use the arrow keys, Home and End.
 - **Policy thresholds.** Every subject also shows the numbers for two fixed reference thresholds (75% for exam eligibility and 85% for fine-free by default).
 - **Colour-coded progress.** Red below the eligibility threshold, amber below your target, green once the target is met.
 - **Add, edit, rename and delete** subjects, with a confirmation dialog for deletion.
 - **Live validation.** The form uses the same validators as the core, so the rules cannot drift between C++ and JavaScript.
 - **Keyboard shortcut.** Press `N` to add a subject.
-- **Light and dark themes** that follow your system setting.
+- **Light and dark themes** that follow your system setting, with an accent gradient throughout.
 
 ## Getting started
 
@@ -43,7 +44,7 @@ This produces `build-wasm/acalc.js` and `build-wasm/acalc.wasm`.
 
 ### Run
 
-WebAssembly cannot be loaded from a `file://` URL, so serve the project folder over HTTP:
+WebAssembly and the SVG icons cannot be loaded from a `file://` URL, so serve the project folder over HTTP:
 
 ```bash
 python -m http.server 8000
@@ -51,19 +52,25 @@ python -m http.server 8000
 
 Then open <http://localhost:8000>.
 
+### Deploy
+
+The site is static. To host it (for example on GitHub Pages), publish `index.html`, `styles.css`, `app.js`, the `assets` folder and the two generated files in `build-wasm`.
+
 ## Project layout
 
 ```
 .
 ├── CMakeLists.txt
 ├── src/
-│   ├── core.h        # Attendance logic (header-only, C++23)
-│   └── main.cpp      # Embind bindings
+│   ├── core.h          # Attendance logic (header-only, C++23)
+│   └── main.cpp        # Embind bindings
 ├── index.html
 ├── styles.css
-├── app.js            # UI logic
-├── icon.svg          # App icon and favicon
-└── build-wasm/       # Generated: acalc.js, acalc.wasm
+├── app.js              # UI logic
+├── assets/
+│   ├── acalc.svg       # App icon and favicon
+│   └── icons/          # UI icons (SVG)
+└── build-wasm/         # Generated: acalc.js, acalc.wasm
 ```
 
 ## How it works
@@ -123,16 +130,31 @@ Operations return a plain `{ status, code, message }` object. `code` is one of:
 
 | What | Where |
 | --- | --- |
-| Target range, default target, class limit | `src/core.h` (`MIN_DESIRED_PERCENTAGE`, `MAX_DESIRED_PERCENTAGE`, `DESIRED_PERCENTAGE`, `MAX_CLASSES`). The UI reads these from the core, so there is nothing to change in JavaScript. |
+| Target range, default target, class limit | `src/core.h` (`MIN_DESIRED_PERCENTAGE`, `MAX_DESIRED_PERCENTAGE`, `DESIRED_PERCENTAGE`, `MAX_CLASSES`). The UI reads these from the core. |
+| Slider snap marks | Built from the core's target range in steps of `TARGET_STEP` (5) in `app.js`. |
 | Policy thresholds and the red progress cut-off | `app.js` (`ELIGIBILITY_PERCENTAGE`, `FINE_FREE_PERCENTAGE`). Both must lie within the target range. |
-| Accent gradient | `styles.css` (`--color-accent-start`, `--color-accent-end`) and `icon.svg` |
+| Accent gradient | `styles.css` (`--color-accent-start`, `--color-accent-end`) and the artwork in `assets` |
+
+## Icons
+
+Icons are standalone SVG files in `assets/icons`, applied through CSS in `styles.css`:
+
+| Icon | Kind |
+| --- | --- |
+| `add`, `delete`, `heart`, `heart-filled` | Carry their own colours (accent gradient or red) and are shown exactly as drawn |
+| `edit`, `close`, `chevron-down` | Single colour: only the shape is used, and the colour follows the surrounding text |
+
+The expander arrow is the single `chevron-down` icon, rotated when a card is open. To add an icon, drop the SVG into `assets/icons` and add a matching `.icon[data-icon="name"]` rule in `styles.css`.
 
 ## Notes and limitations
 
 - **Data is not saved.** Subjects live in memory and are lost when the page is reloaded.
-- **Icons.** Button icons use the Segoe Fluent Icons font (with Segoe MDL2 Assets as a fallback), which ships with Windows 10 and 11. On other systems they appear as empty boxes unless you bundle the font or swap in SVG icons.
-- **Browser support.** The UI uses `<dialog>`, `color-mix()` and SVG favicons. Older Safari versions may not show the favicon.
+- **Browser support.** The UI uses `<dialog>`, `color-mix()`, CSS masks and SVG favicons. Older Safari versions may not show the favicon.
 
 ## Author
 
 Made with ♥ by Silicon Dioxide, [@silincone](https://github.com/silincone) on GitHub.
+
+## License
+
+Add your license here.
