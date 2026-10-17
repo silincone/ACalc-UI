@@ -27,7 +27,7 @@ ACalc is a small web app. All the calculation logic is a header-only C++23 libra
 
 ## Side bar
 
-From top to bottom: the target slider, then **Add subject**, **Attendance status**, **Import attendance** and **About**.
+From top to bottom: the target slider, then **Attendance status**, **Add subject**, **Import attendance** and **About**.
 
 ## Importing from the college portal
 
