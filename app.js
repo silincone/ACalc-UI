@@ -23,6 +23,7 @@ const state = {
   target: 0,            // current target attendance percentage
   targetOptions: [],    // percentages the slider can snap to, ascending
   draggingTarget: false,
+  importItems: [],      // subjects waiting in the import preview
   subjects: [],         // plain-object snapshot of the register
   expanded: new Set(),  // names of subjects whose details are open
   editingName: null,    // subject being edited, or null when adding
@@ -49,6 +50,20 @@ const dom = {
   statusIcon: $("status-icon"),
   statusDialog: $("status-dialog"),
   statusContent: $("status-content"),
+  importButton: $("import-button"),
+  importDialog: $("import-dialog"),
+  importSource: $("import-source"),
+  importPreview: $("import-preview"),
+  importText: $("import-text"),
+  importError: $("import-error"),
+  importPreviewButton: $("import-preview-button"),
+  importBack: $("import-back"),
+  importConfirm: $("import-confirm"),
+  importSummary: $("import-summary"),
+  importList: $("import-list"),
+  bookmarkletCode: $("bookmarklet-code"),
+  bookmarkletLink: $("bookmarklet-link"),
+  copyBookmarklet: $("copy-bookmarklet"),
 
   subjectDialog: $("subject-dialog"),
   subjectForm: $("subject-form"),
@@ -229,7 +244,6 @@ function buildCard(subject, index) {
   const body = createElement(
     "div",
     { className: "card-body", attributes: { id: bodyId } },
-    createElement("dl", {}, ...row("Current percentage", formatPercent(subject.current))),
     createElement("h3", { text: `Target outcomes (${formatTarget(state.target)})` }),
     createElement(
       "dl",
@@ -688,12 +702,242 @@ function openStatusDialog() {
         ),
       );
       if (names.length > 0) {
-        dom.statusContent.append(createElement("p", { className: "status-names", text: names.join(", ") }));
+        dom.statusContent.append(createElement("ul", { className: "status-names" }, ...names.map((name) => createElement("li", { text: name }))));
       }
     }
   }
 
   dom.statusDialog.showModal();
+}
+
+/* ---------- Import from the portal ---------- */
+
+const MAX_IMPORT_ROWS = 200;
+
+/**
+ * Runs on the portal page as a bookmarklet. It is converted to text, so it must stay
+ * self-contained, end every statement with a semicolon and contain no line comments.
+ * It finds the attendance table and opens ACalc with the table's rows.
+ */
+function readAttendanceTable(importUrl) {
+  const documents = [document];
+  document.querySelectorAll("iframe, frame").forEach((frame) => {
+    try {
+      if (frame.contentDocument) documents.push(frame.contentDocument);
+    } catch (error) {
+      return;
+    }
+  });
+  const cleanText = (cell) => cell.textContent.replace(/\s+/g, " ").trim();
+  for (const doc of documents) {
+    for (const table of doc.querySelectorAll("table")) {
+      const rows = [...table.rows].map((row) => [...row.cells].map(cleanText));
+      const hasHeader = rows.some((row) =>
+        ["subject", "conducted", "attended"].every((word) => row.some((cell) => cell.toLowerCase().includes(word))),
+      );
+      if (!hasHeader) continue;
+      const json = JSON.stringify(rows);
+      const encoded = btoa(unescape(encodeURIComponent(json))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+      const link = importUrl + "#import=" + encoded;
+      if (!window.open(link, "_blank")) window.location.href = link;
+      return;
+    }
+  }
+  alert("ACalc could not find the attendance table. Open the attendance page first.");
+}
+
+function buildBookmarklet() {
+  const importUrl = `${window.location.origin}${window.location.pathname}`;
+  const source = `(${readAttendanceTable.toString()})(${JSON.stringify(importUrl)});`;
+  return `javascript:${source.replace(/\s*\n\s*/g, " ")}`;
+}
+
+/** Turns "E0010 - Digital Signal Processing - EC3003-1 - Practical" into "Digital Signal Processing (Practical)". */
+function cleanSubjectName(rawName) {
+  const parts = rawName.split(" - ").map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 3 || !/^[A-Za-z]\d+$/.test(parts[0])) return rawName.trim();
+
+  const suffix = parts.slice(3).join(" ");
+  return suffix ? `${parts[1]} (${suffix})` : parts[1];
+}
+
+/** Reads the rows of the portal table: finds the header, then one subject per row. */
+function parseAttendanceRows(rows) {
+  const columns = ["subject", "conducted", "attended"];
+  const includesWord = (cell, word) => cell.toLowerCase().includes(word);
+  const headerIndex = rows.findIndex((row) => columns.every((word) => row.some((cell) => includesWord(cell, word))));
+  if (headerIndex === -1) {
+    return { error: "No attendance table was found. The data needs Subject, Conducted and Attended columns." };
+  }
+
+  const header = rows[headerIndex];
+  const [subjectColumn, conductedColumn, attendedColumn] = columns.map((word) =>
+    header.findIndex((cell) => includesWord(cell, word)),
+  );
+
+  const items = [];
+  for (const row of rows.slice(headerIndex + 1)) {
+    const rawName = (row[subjectColumn] ?? "").trim();
+    const conducted = Number.parseInt(row[conductedColumn], 10);
+    const attended = Number.parseInt(row[attendedColumn], 10);
+    if (!rawName || /^total/i.test(rawName) || Number.isNaN(conducted) || Number.isNaN(attended)) continue;
+    items.push({ rawName, name: cleanSubjectName(rawName), attended, conducted });
+  }
+
+  // If two cleaned names collide, fall back to the full portal name for those subjects.
+  const nameCounts = new Map();
+  for (const item of items) nameCounts.set(item.name, (nameCounts.get(item.name) ?? 0) + 1);
+  for (const item of items) {
+    if (nameCounts.get(item.name) > 1) item.name = item.rawName;
+  }
+
+  if (items.length === 0) return { error: "The table has no subject rows with class counts." };
+  return { items };
+}
+
+/** Rows copied from a web page arrive tab-separated, one row per line. */
+function parsePastedText(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.split(line.includes("\t") ? "\t" : /\s{2,}/).map((cell) => cell.trim()))
+    .filter((row) => row.some(Boolean));
+}
+
+/** Decodes the rows sent by the bookmarklet. The link can come from anyone, so the shape is checked. */
+function decodeImportPayload(encoded) {
+  const base64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="));
+  const rows = JSON.parse(new TextDecoder().decode(Uint8Array.from(binary, (character) => character.charCodeAt(0))));
+
+  const isValid =
+    Array.isArray(rows) &&
+    rows.length <= MAX_IMPORT_ROWS &&
+    rows.every((row) => Array.isArray(row) && row.every((cell) => typeof cell === "string"));
+  if (!isValid) throw new Error("Unexpected import data.");
+  return rows;
+}
+
+/** Returns a reason to skip the item, or null when it can be imported. */
+function checkImportItem(item) {
+  if (item.attended < 0 || item.conducted < 0) return "Class counts cannot be negative.";
+
+  const nameOutcome = toOutcome(state.core.validateSubjectName(item.name));
+  if (!nameOutcome.ok) return nameOutcome.message;
+
+  const clampCount = (value) => Math.min(value, state.core.MAX_CLASSES + 1);
+  const countsOutcome = toOutcome(state.core.validateClassesCount(clampCount(item.attended), clampCount(item.conducted)));
+  return countsOutcome.ok ? null : countsOutcome.message;
+}
+
+function showImportStep(step) {
+  dom.importSource.hidden = step !== "source";
+  dom.importPreview.hidden = step !== "preview";
+}
+
+function showImportError(message) {
+  dom.importError.textContent = message;
+  dom.importError.hidden = false;
+}
+
+function openImportDialog() {
+  dom.importError.hidden = true;
+  dom.importText.value = "";
+  dom.bookmarkletCode.value = buildBookmarklet();
+  dom.bookmarkletLink.href = dom.bookmarkletCode.value;
+  showImportStep("source");
+  dom.importDialog.showModal();
+}
+
+function buildImportRow(item) {
+  return createElement(
+    "li",
+    { className: item.problem ? "import-row has-problem" : "import-row" },
+    createElement("span", { className: "import-name", text: item.name }),
+    createElement("span", { className: "import-counts", text: `${item.attended} / ${item.conducted}` }),
+    ...(item.problem ? [createElement("span", { className: "import-problem", text: `Skipped: ${item.problem}` })] : []),
+  );
+}
+
+function showImportPreview(items) {
+  state.importItems = items.map((item) => ({ ...item, problem: checkImportItem(item) }));
+  const ready = state.importItems.filter((item) => !item.problem).length;
+
+  dom.importSummary.textContent = `${ready} of ${state.importItems.length} subjects are ready to import.`;
+  dom.importList.replaceChildren(...state.importItems.map(buildImportRow));
+  dom.importConfirm.disabled = ready === 0;
+
+  showImportStep("preview");
+  if (!dom.importDialog.open) dom.importDialog.showModal();
+}
+
+function handleImportPreview() {
+  dom.importError.hidden = true;
+  const parsed = parseAttendanceRows(parsePastedText(dom.importText.value));
+  if (parsed.error) {
+    showImportError(parsed.error);
+    return;
+  }
+  showImportPreview(parsed.items);
+}
+
+function handleImportConfirm() {
+  const mode = document.querySelector('input[name="import-mode"]:checked').value;
+  const existingNames = new Set(state.subjects.map((subject) => subject.name));
+
+  if (mode === "replace") {
+    state.register.clear();
+    state.expanded.clear();
+    existingNames.clear();
+  }
+
+  const failures = [];
+  for (const item of state.importItems.filter((entry) => !entry.problem)) {
+    const outcome = toOutcome(
+      existingNames.has(item.name)
+        ? state.register.edit(item.name, item.name, item.attended, item.conducted)
+        : state.register.insert(item.name, item.attended, item.conducted),
+    );
+    if (!outcome.ok) failures.push(`${item.name}: ${outcome.message}`);
+  }
+
+  dom.importDialog.close();
+  refresh();
+  if (failures.length > 0) showBanner(`Some subjects could not be imported. ${failures.join(" ")}`);
+}
+
+async function copyBookmarklet() {
+  try {
+    await navigator.clipboard.writeText(dom.bookmarkletCode.value);
+    dom.copyBookmarklet.textContent = "Copied";
+    setTimeout(() => {
+      dom.copyBookmarklet.textContent = "Copy code";
+    }, 1500);
+  } catch {
+    dom.bookmarkletCode.select();
+  }
+}
+
+/** Handles the link opened by the bookmarklet, then removes the data from the address bar. */
+function importFromHash() {
+  const prefix = "#import=";
+  if (!window.location.hash.startsWith(prefix)) return;
+
+  const encoded = window.location.hash.slice(prefix.length);
+  window.history.replaceState(null, "", window.location.pathname + window.location.search);
+
+  let parsed;
+  try {
+    parsed = parseAttendanceRows(decodeImportPayload(encoded));
+  } catch {
+    parsed = { error: "The import link could not be read." };
+  }
+
+  if (parsed.error) {
+    openImportDialog();
+    showImportError(parsed.error);
+    return;
+  }
+  showImportPreview(parsed.items);
 }
 
 /* ---------- Setup ---------- */
@@ -727,6 +971,14 @@ function bindApplicationEvents() {
   bindTargetSlider();
   dom.renameButton.addEventListener("click", toggleRename);
   dom.statusButton.addEventListener("click", openStatusDialog);
+
+  dom.importButton.addEventListener("click", openImportDialog);
+  dom.importPreviewButton.addEventListener("click", handleImportPreview);
+  dom.importBack.addEventListener("click", () => showImportStep("source"));
+  dom.importConfirm.addEventListener("click", handleImportConfirm);
+  dom.copyBookmarklet.addEventListener("click", copyBookmarklet);
+  dom.bookmarkletCode.addEventListener("focus", () => dom.bookmarkletCode.select());
+  dom.bookmarkletLink.addEventListener("click", (event) => event.preventDefault());
 
   // Keyboard shortcut: N opens "Add subject" unless the user is typing or a dialog is open.
   document.addEventListener("keydown", (event) => {
@@ -787,7 +1039,9 @@ async function initialize() {
     bindApplicationEvents();
     dom.addButton.disabled = false;
     dom.statusButton.disabled = false;
+    dom.importButton.disabled = false;
     refresh();
+    importFromHash();
   } catch (error) {
     console.error("Initialization failed:", error);
     showBanner(`The application could not start: ${error.message}`);
