@@ -38,11 +38,14 @@
       <button id="status-button" class="icon-button icon-button-large" type="button" title="Attendance status" aria-label="Attendance status" aria-haspopup="dialog" disabled>
         <span id="status-icon" class="status-icon-holder" aria-hidden="true"></span>
       </button>
-      <button id="about-button" class="icon-button icon-button-large" type="button" title="About" aria-label="About" aria-haspopup="dialog">
-        <span id="about-icon" class="icon" data-icon="heart" aria-hidden="true"></span>
-      </button>
       <button id="add-subject-button" class="icon-button icon-button-large" type="button" title="Add subject (N)" aria-label="Add subject" aria-keyshortcuts="N" disabled>
         <span class="icon" data-icon="add" aria-hidden="true"></span>
+      </button>
+      <button id="import-button" class="icon-button icon-button-large" type="button" title="Import attendance" aria-label="Import attendance" aria-haspopup="dialog" disabled>
+        <span class="icon" data-icon="import" aria-hidden="true"></span>
+      </button>
+      <button id="about-button" class="icon-button icon-button-large" type="button" title="About" aria-label="About" aria-haspopup="dialog">
+        <span id="about-icon" class="icon" data-icon="heart" aria-hidden="true"></span>
       </button>
     </nav>
   </div>
@@ -92,6 +95,52 @@
         <button type="submit" class="button button-danger">Delete</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Import from the portal -->
+  <dialog id="import-dialog" class="dialog-wide" aria-labelledby="import-dialog-title">
+    <h2 id="import-dialog-title">Import attendance</h2>
+
+    <div id="import-source">
+      <p class="dialog-text">Bring your attendance in from the college portal instead of typing it.</p>
+
+      <h3 class="dialog-subtitle">Bookmark (recommended)</h3>
+      <ol class="steps">
+        <li>Create a new bookmark in your browser and paste this code as its address, or drag the link below to your bookmarks bar.</li>
+        <li>Log in to the portal and open the attendance page.</li>
+        <li>Open the bookmark. ACalc opens with a preview of your subjects.</li>
+      </ol>
+      <textarea id="bookmarklet-code" class="code-box" rows="3" readonly aria-label="Bookmark code"></textarea>
+      <div class="import-tools">
+        <button type="button" id="copy-bookmarklet" class="button">Copy code</button>
+        <a id="bookmarklet-link" class="button link-button" href="#" title="Drag this to your bookmarks bar">ACalc import</a>
+      </div>
+
+      <h3 class="dialog-subtitle">Or paste the table</h3>
+      <p class="dialog-text">Select the attendance table on the portal, copy it, and paste it here.</p>
+      <textarea id="import-text" class="code-box" rows="5" aria-label="Pasted attendance table"></textarea>
+      <p id="import-error" class="field-error" role="alert" hidden></p>
+
+      <div class="dialog-actions">
+        <button type="button" class="button" data-close-dialog>Close</button>
+        <button type="button" id="import-preview-button" class="button button-primary"><span class="text-gradient">Preview</span></button>
+      </div>
+    </div>
+
+    <div id="import-preview" hidden>
+      <p id="import-summary" class="dialog-text"></p>
+      <ul id="import-list" class="import-list"></ul>
+      <fieldset class="import-mode">
+        <legend>When importing</legend>
+        <label><input type="radio" name="import-mode" value="merge" checked /> Update matching subjects and add new ones</label>
+        <label><input type="radio" name="import-mode" value="replace" /> Replace all current subjects</label>
+      </fieldset>
+      <div class="dialog-actions">
+        <button type="button" class="button" data-close-dialog>Cancel</button>
+        <button type="button" id="import-back" class="button">Back</button>
+        <button type="button" id="import-confirm" class="button button-primary"><span class="text-gradient">Import</span></button>
+      </div>
+    </div>
   </dialog>
 
   <!-- Attendance status -->
