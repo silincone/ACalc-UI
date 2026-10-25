@@ -1,0 +1,23 @@
+# CMake / Emscripten build output: keep only the two files the site needs
+build-wasm/*
+!build-wasm/acalc.js
+!build-wasm/acalc.wasm
+build/
+out/
+CMakeUserPresets.json
+
+# Editor settings (machine-specific paths)
+.vscode/
+.vs/
+.idea/
+
+# Personal notes and scratch files: remove these lines if you want them in the repo
+prompt.txt
+test.js
+CMakeCommands.txt
+assets/icons/icons.typ
+
+# Operating system files
+Thumbs.db
+Desktop.ini
+.DS_Store

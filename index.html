@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+  <title>ACalc</title>
+  <meta name="description" content="ACalc: an attendance calculator" />
+  <link rel="icon" type="image/svg+xml" href="assets/acalc.svg" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="shell">
+    <main class="content">
+      <header class="content-header">
+        <h1>ACalc</h1>
+      </header>
+
+      <p id="startup-error" class="banner" role="alert" hidden></p>
+
+      <h2 class="visually-hidden">Subjects</h2>
+      <div id="subject-list" class="stack"></div>
+    </main>
+
+    <nav class="rail" aria-label="Primary">
+      <div class="target-slider rail-top">
+        <div class="slider-value-box">
+          <span id="target-value" class="slider-value text-gradient" aria-hidden="true">-</span>
+        </div>
+        <div id="target-slider" class="slider is-disabled" role="slider" tabindex="0" aria-orientation="vertical" title="Target attendance (T)" aria-keyshortcuts="T"
+             aria-label="Target attendance" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-disabled="true">
+          <div id="slider-rail" class="slider-rail">
+            <span class="slider-line"></span>
+            <span class="slider-fill"></span>
+            <span id="slider-thumb" class="slider-thumb"></span>
+          </div>
+        </div>
+      </div>
+      <button id="status-button" class="icon-button icon-button-large" type="button" title="Attendance status (S)" aria-label="Attendance status" aria-keyshortcuts="S" aria-haspopup="dialog" disabled>
+        <span id="status-icon" class="status-icon-holder" aria-hidden="true"></span>
+      </button>
+      <button id="add-subject-button" class="icon-button icon-button-large" type="button" title="Add subject (N)" aria-label="Add subject" aria-keyshortcuts="N" disabled>
+        <span class="icon" data-icon="add" aria-hidden="true"></span>
+      </button>
+      <button id="import-button" class="icon-button icon-button-large" type="button" title="Import attendance (I)" aria-label="Import attendance" aria-keyshortcuts="I" aria-haspopup="dialog" disabled>
+        <span class="icon" data-icon="import" aria-hidden="true"></span>
+      </button>
+      <button id="about-button" class="icon-button icon-button-large" type="button" title="About (A)" aria-label="About" aria-keyshortcuts="A" aria-haspopup="dialog">
+        <span id="about-icon" class="icon" data-icon="heart" aria-hidden="true"></span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Add / edit subject -->
+  <dialog id="subject-dialog" aria-labelledby="subject-dialog-title">
+    <form id="subject-form" method="dialog" novalidate>
+      <h2 id="subject-dialog-title">Add subject</h2>
+
+      <div class="field">
+        <label for="subject-name">Subject name</label>
+        <div class="input-row">
+          <input type="text" id="subject-name" autocomplete="off" placeholder="e.g. Mathematics" aria-describedby="subject-name-error" />
+          <button type="button" id="rename-button" class="icon-button icon-button-field" title="Rename subject" aria-label="Rename subject" hidden>
+            <span id="rename-icon" class="icon" data-icon="edit" aria-hidden="true"></span>
+          </button>
+        </div>
+        <p id="subject-name-error" class="field-error" role="alert" hidden></p>
+      </div>
+
+      <div class="field">
+        <label for="classes-attended">Classes attended</label>
+        <input type="number" id="classes-attended" min="0" step="1" value="0" inputmode="numeric" aria-describedby="subject-counts-error" />
+      </div>
+
+      <div class="field">
+        <label for="classes-conducted">Classes conducted</label>
+        <input type="number" id="classes-conducted" min="0" step="1" value="0" inputmode="numeric" aria-describedby="subject-counts-error" />
+        <p id="subject-counts-error" class="field-error" role="alert" hidden></p>
+      </div>
+
+      <div class="dialog-actions">
+        <button type="button" class="button" data-close-dialog>Cancel</button>
+        <button type="submit" class="button button-primary"><span class="text-gradient">Save</span></button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Delete confirmation -->
+  <dialog id="delete-dialog" aria-labelledby="delete-dialog-title">
+    <form id="delete-form" method="dialog">
+      <h2 id="delete-dialog-title">Delete subject</h2>
+      <p id="delete-message" class="dialog-text"></p>
+      <p id="delete-error" class="field-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" class="button" data-close-dialog>Cancel</button>
+        <button type="submit" class="button button-danger">Delete</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Projection -->
+  <dialog id="projection-dialog" class="dialog-wide" aria-labelledby="projection-dialog-title">
+    <form id="projection-form" method="dialog" novalidate>
+      <h2 id="projection-dialog-title">Projection</h2>
+      <p class="dialog-text">See where your attendance would land if you attend or skip the next classes.</p>
+
+      <div class="projection-controls">
+        <div class="projection-row">
+          <div class="segmented" role="radiogroup" aria-label="Scenario">
+            <label><input type="radio" name="projection-mode" value="attend" checked /><span>Attend</span></label>
+            <label><input type="radio" name="projection-mode" value="skip" /><span>Skip</span></label>
+          </div>
+          <div class="stepper">
+            <input type="number" id="projection-classes" min="0" step="1" value="1" inputmode="numeric" aria-label="Number of classes" />
+            <label class="stepper-unit" for="projection-classes">classes</label>
+          </div>
+        </div>
+      </div>
+
+      <p id="projection-error" class="field-error" role="alert" hidden></p>
+      <div id="projection-preview" class="projection-stage"></div>
+
+      <div class="dialog-actions">
+        <button type="button" class="button" data-close-dialog>Cancel</button>
+        <button type="submit" id="projection-update" class="button button-primary" disabled><span class="text-gradient">Update</span></button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Import from the portal -->
+  <dialog id="import-dialog" class="dialog-wide" aria-labelledby="import-dialog-title">
+    <h2 id="import-dialog-title">Import attendance</h2>
+
+    <div id="import-source">
+      <p class="dialog-text">Bring your attendance in from the college portal instead of typing it.</p>
+
+      <h3 class="dialog-subtitle">Bookmark (recommended)</h3>
+      <ol class="steps">
+        <li>Create a new bookmark in your browser and paste this code as its address, or drag the link below to your bookmarks bar.</li>
+        <li>Log in to the portal and open the attendance page.</li>
+        <li>Open the bookmark. ACalc opens with a preview of your subjects.</li>
+      </ol>
+      <textarea id="bookmarklet-code" class="code-box" rows="3" readonly aria-label="Bookmark code"></textarea>
+      <div class="import-tools">
+        <button type="button" id="copy-bookmarklet" class="button">Copy code</button>
+        <a id="bookmarklet-link" class="button link-button" href="#" title="Drag this to your bookmarks bar">ACalc import</a>
+      </div>
+
+      <h3 class="dialog-subtitle">Or paste the table</h3>
+      <p class="dialog-text">Select the attendance table on the portal, copy it, and paste it here.</p>
+      <textarea id="import-text" class="code-box" rows="5" aria-label="Pasted attendance table"></textarea>
+      <p id="import-error" class="field-error" role="alert" hidden></p>
+
+      <div class="dialog-actions">
+        <button type="button" class="button" data-close-dialog>Close</button>
+        <button type="button" id="import-preview-button" class="button button-primary"><span class="text-gradient">Preview</span></button>
+      </div>
+    </div>
+
+    <div id="import-preview" hidden>
+      <p id="import-summary" class="dialog-text"></p>
+      <ul id="import-list" class="import-list"></ul>
+      <fieldset class="import-mode">
+        <legend>When importing</legend>
+        <label><input type="radio" name="import-mode" value="merge" checked /> Update matching subjects and add new ones</label>
+        <label><input type="radio" name="import-mode" value="replace" /> Replace all current subjects</label>
+      </fieldset>
+      <div class="dialog-actions">
+        <button type="button" class="button" data-close-dialog>Cancel</button>
+        <button type="button" id="import-back" class="button">Back</button>
+        <button type="button" id="import-confirm" class="button button-primary"><span class="text-gradient">Import</span></button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Attendance status -->
+  <dialog id="status-dialog" class="dialog-wide" aria-labelledby="status-dialog-title">
+    <h2 id="status-dialog-title">Attendance status</h2>
+    <div id="status-content"></div>
+    <div class="dialog-actions">
+      <button type="button" class="button" data-close-dialog>Close</button>
+    </div>
+  </dialog>
+
+  <!-- About -->
+  <dialog id="about-dialog" class="dialog-wide" aria-labelledby="about-dialog-title">
+    <div class="dialog-header">
+      <img src="assets/acalc.svg" alt="" class="about-icon" width="56" height="56" />
+      <div>
+        <h2 id="about-dialog-title">ACalc</h2>
+        <p class="hint">Attendance Calculator</p>
+      </div>
+    </div>
+    <p class="dialog-text">
+      Track your attendance for each subject and see how many classes you still need to attend,
+      or can afford to miss, to stay on target.
+    </p>
+
+    <h3 class="dialog-subtitle">How to use</h3>
+    <dl class="key-list">
+      <dt><span class="icon" data-icon="add" aria-hidden="true"></span></dt>
+      <dd>Add a subject with its attended and conducted classes</dd>
+      <dt><span class="icon" data-icon="edit" aria-hidden="true"></span></dt>
+      <dd>Edit the class counts, or rename a subject</dd>
+      <dt><span class="icon" data-icon="projection" aria-hidden="true"></span></dt>
+      <dd>See what happens if you attend or skip the next few classes</dd>
+      <dt><span class="icon" data-icon="delete" aria-hidden="true"></span></dt>
+      <dd>Delete a subject</dd>
+      <dt>Ring</dt>
+      <dd>One dot per subject, coloured by its status. Select it for a summary</dd>
+      <dt>Slider</dt>
+      <dd>Drag the slider to choose the attendance percentage you are aiming for</dd>
+    </dl>
+
+    <h3 class="dialog-subtitle">Progress colors</h3>
+    <dl class="key-list">
+      <dt><span class="swatch swatch-critical"></span></dt>
+      <dd>Below <span id="about-eligibility"></span></dd>
+      <dt><span class="swatch swatch-warning"></span></dt>
+      <dd>Below your target</dd>
+      <dt><span class="swatch swatch-met"></span></dt>
+      <dd>Target reached</dd>
+    </dl>
+
+    <h3 class="dialog-subtitle">Keyboard shortcuts</h3>
+    <dl class="key-list">
+      <dt><kbd>N</kbd></dt>
+      <dd>Add a subject</dd>
+      <dt><kbd>S</kbd></dt>
+      <dd>Attendance status</dd>
+      <dt><kbd>I</kbd></dt>
+      <dd>Import attendance</dd>
+      <dt><kbd>A</kbd></dt>
+      <dd>About</dd>
+      <dt><kbd>T</kbd></dt>
+      <dd>Focus the target slider, then change it with <kbd>↑</kbd> <kbd>↓</kbd></dd>
+      <dt><kbd>↑</kbd> <kbd>↓</kbd></dt>
+      <dd>Move between subjects, once one is focused</dd>
+      <dt><kbd>→</kbd> <kbd>←</kbd></dt>
+      <dd>Open or close the focused subject</dd>
+      <dt><kbd>E</kbd> <kbd>P</kbd> <kbd>Del</kbd></dt>
+      <dd>Edit, project or delete the focused subject</dd>
+      <dt><kbd>F2</kbd></dt>
+      <dd>Rename, while editing a subject</dd>
+      <dt><kbd>A</kbd> <kbd>S</kbd></dt>
+      <dd>Attend or skip, in the projection dialog</dd>
+    </dl>
+
+    <p class="about-credit">Made with ♥ by Silicon Dioxide</p>
+    <p class="about-credit">
+      GitHub: <a href="https://github.com/silincone" target="_blank" rel="noopener noreferrer">Silincone</a>
+    </p>
+
+    <div class="dialog-actions">
+      <button type="button" class="button" data-close-dialog>Close</button>
+    </div>
+  </dialog>
+
+  <script src="build-wasm/acalc.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
