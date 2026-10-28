@@ -111,9 +111,17 @@
             <label><input type="radio" name="projection-mode" value="attend" checked /><span>Attend</span></label>
             <label><input type="radio" name="projection-mode" value="skip" /><span>Skip</span></label>
           </div>
-          <div class="stepper">
-            <input type="number" id="projection-classes" min="0" step="1" value="1" inputmode="numeric" aria-label="Number of classes" />
-            <label class="stepper-unit" for="projection-classes">classes</label>
+          <div class="dial-group">
+            <div id="projection-dial" class="dial" role="spinbutton" tabindex="0" aria-orientation="vertical"
+                 aria-label="Number of classes" aria-valuemin="0" aria-valuemax="30" aria-valuenow="1">
+              <span class="icon dial-indicator" data-icon="indicator" aria-hidden="true"></span>
+              <div id="projection-dial-values" class="dial-values" aria-hidden="true"></div>
+            </div>
+            <input type="number" id="projection-classes" class="dial-input" min="0" step="1" value="1" inputmode="numeric" aria-label="Number of classes" data-plain hidden />
+            <span class="dial-unit">classes</span>
+            <button type="button" id="projection-edit" class="icon-button icon-button-small" title="Type a number" aria-label="Type a number">
+              <span id="projection-edit-icon" class="icon" data-icon="edit" aria-hidden="true"></span>
+            </button>
           </div>
         </div>
       </div>
@@ -243,11 +251,11 @@
       <dd>Edit, project or delete the focused subject</dd>
       <dt><kbd>F2</kbd></dt>
       <dd>Rename, while editing a subject</dd>
-      <dt><kbd>A</kbd> <kbd>S</kbd></dt>
-      <dd>Attend or skip, in the projection dialog</dd>
+      <dt><kbd>A</kbd> <kbd>S</kbd> <kbd>E</kbd></dt>
+      <dd>Attend, skip or type the number, in the projection dialog</dd>
     </dl>
 
-    <p class="about-credit">Made with ♥ by Silicon Dioxide</p>
+    <p class="about-credit">Made with <span class="icon" data-icon="heart-filled" role="img" aria-label="love"></span> by Silicon Dioxide</p>
     <p class="about-credit">
       GitHub: <a href="https://github.com/silincone" target="_blank" rel="noopener noreferrer">Silincone</a>
     </p>

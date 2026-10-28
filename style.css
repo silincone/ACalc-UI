@@ -63,6 +63,7 @@ h1 {
 dialog h2 { font-size: 1.1rem; line-height: 1.25; margin-bottom: 14px; }
 
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+dialog:focus { outline: none; }
 
 /* Touch screens: no grey flash over the tapped area, and no double-tap delay */
 button, .slider { -webkit-tap-highlight-color: transparent; }
@@ -100,6 +101,7 @@ button { touch-action: manipulation; }
 .icon[data-icon="heart-filled"] { background-image: url("assets/icons/heart-filled.svg"); }
 .icon[data-icon="import"] { background-image: url("assets/icons/import.svg"); }
 .icon[data-icon="projection"] { background-image: url("assets/icons/projection.svg"); }
+.icon[data-icon="indicator"] { background-image: url("assets/icons/indicator.svg"); }
 
 .text-gradient {
   background: var(--gradient-accent);
@@ -134,21 +136,23 @@ button { touch-action: manipulation; }
   display: grid;
   grid-template-columns: minmax(0, 1fr) 60px;
   min-height: 100vh;
+  /* The side bar's surface and divider, painted down the whole page so the bar never looks cut off */
+  background:
+    linear-gradient(var(--color-border), var(--color-border)) calc(100% - 59px) 0 / 1px 100% no-repeat,
+    linear-gradient(var(--color-surface), var(--color-surface)) 100% 0 / 60px 100% no-repeat;
 }
 
 .rail {
   position: sticky;
   top: 0;
   height: 100vh;
-  height: 100dvh;
+  height: 100svh; /* svh stays fixed while the phone's address bar slides in and out, so the bar no longer stretches */
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
   padding: 0 0 8px;
-  background: var(--color-surface);
-  border-left: 1px solid var(--color-border);
 }
 
 /* Target slider: a vertical version of the progress bar, from 50% at the bottom to 100% at the top */
@@ -183,7 +187,7 @@ button { touch-action: manipulation; }
   touch-action: none;
   user-select: none;
 }
-@supports (height: 100dvh) { .slider { --rail-free: calc(100dvh - 200px); } }
+@supports (height: 100svh) { .slider { --rail-free: calc(100svh - 200px); } }
 .slider.is-disabled { opacity: 0.4; pointer-events: none; }
 .slider-rail { position: absolute; inset: 9px 0; }
 .slider-line {
@@ -420,6 +424,7 @@ dialog::backdrop { background: rgb(0 0 0 / 0.5); }
 .dialog-header h2 { margin: 0; }
 .about-icon { flex: none; width: 56px; height: 56px; }
 .about-credit a { color: var(--color-accent); }
+.about-credit .icon { vertical-align: -0.2em; }
 kbd {
   padding: 0 6px;
   border: 1px solid var(--color-border);
@@ -507,10 +512,24 @@ kbd {
 }
 .segmented input:focus-visible + span { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 
-.stepper { display: flex; align-items: center; gap: 8px; }
-.stepper input {
-  width: 100%;
-  padding: 6px 28px 6px 8px;
+/* Number dial: the centre number is the one used; the numbers around it shrink and fade away */
+.dial-group { display: flex; align-items: center; gap: 1px; }
+.dial { position: relative; width: 104px; border-radius: var(--radius); cursor: ns-resize; touch-action: none; user-select: none; }
+.dial-values {
+  display: grid;
+  justify-items: center;
+  padding-left: 6px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 30%, #000 70%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 30%, #000 70%, transparent);
+}
+.dial-item { display: grid; place-items: center; line-height: 1; font-variant-numeric: tabular-nums; cursor: pointer; }
+.dial-center { height: 36px; font-size: 1.6rem; font-weight: 700; color: var(--color-text); }
+.dial-near { height: 28px; font-size: 1.2rem; color: var(--color-muted); opacity: 0.75; }
+.dial-far { height: 22px; font-size: 0.9rem; color: var(--color-muted); opacity: 0.45; }
+.dial-indicator { position: absolute; top: 50%; left: 0; width: 14px; height: 14px; transform: translateY(-50%); font-size: 14px; }
+.dial-input {
+  width: 104px;
+  padding: 6px 8px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
   background: var(--color-background);
@@ -518,8 +537,8 @@ kbd {
   font: inherit;
   text-align: center;
 }
-.stepper input:focus { border-color: var(--color-accent); }
-.stepper-unit { color: var(--color-muted); font-size: 0.9rem; }
+.dial-input:focus { border-color: var(--color-accent); }
+.dial-unit { color: var(--color-muted); font-size: 0.9rem; }
 
 /* A card shown inside a dialog: always open, nothing to click */
 .card.preview {
@@ -560,5 +579,4 @@ kbd {
 .number-spin + .number-spin { margin-top: -4px; }
 .number-spin:hover { color: var(--color-text); }
 .number-spin .icon.is-up { transform: rotate(180deg); }
-.stepper .number-field { width: 92px; }
 .number-spin .icon { width: 12px; height: 12px; display: block; }

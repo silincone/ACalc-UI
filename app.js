@@ -28,6 +28,8 @@ const state = {
   importItems: [],      // subjects waiting in the import preview
   projectionSubject: null, // subject shown in the projection dialog
   projectionResult: null,  // counts the Update button would apply, or null
+  projectionClasses: 1,    // number of classes shown on the projection dial
+  projectionEditing: false, // true while the number box replaces the dial
   subjects: [],         // plain-object snapshot of the register
   expanded: new Set(),  // names of subjects whose details are open
   editingName: null,    // subject being edited, or null when adding
@@ -74,6 +76,10 @@ const dom = {
   projectionError: $("projection-error"),
   projectionPreview: $("projection-preview"),
   projectionUpdate: $("projection-update"),
+  projectionDial: $("projection-dial"),
+  projectionDialValues: $("projection-dial-values"),
+  projectionEdit: $("projection-edit"),
+  projectionEditIcon: $("projection-edit-icon"),
 
   subjectDialog: $("subject-dialog"),
   subjectForm: $("subject-form"),
@@ -135,6 +141,19 @@ function hasErrorCode(outcome, codeName) {
 function errorArea(outcome) {
   const nameErrors = ["ESN", "SAP", "SNP"];
   return nameErrors.some((codeName) => hasErrorCode(outcome, codeName)) ? "name" : "counts";
+}
+
+/**
+ * Opens a dialog scrolled to its top. A dialog that needs scrolling would otherwise open at its
+ * last button, because the browser focuses the first focusable element and scrolls to it.
+ */
+function showDialog(dialog) {
+  dialog.showModal();
+  if (dialog.scrollHeight > dialog.clientHeight) {
+    dialog.tabIndex = -1;
+    dialog.focus({ preventScroll: true });
+  }
+  dialog.scrollTop = 0;
 }
 
 function showBanner(message) {
@@ -454,7 +473,7 @@ function openSubjectDialog(subject) {
   dom.attended.value = subject ? subject.attended : 0;
   dom.conducted.value = subject ? subject.conducted : 0;
 
-  dom.subjectDialog.showModal();
+  showDialog(dom.subjectDialog);
   (subject ? dom.attended : dom.name).focus();
 }
 
@@ -494,7 +513,7 @@ function openDeleteDialog(subject) {
   dom.deleteMessage.textContent = `Delete “${subject.name}”? This cannot be undone.`;
   dom.deleteError.hidden = true;
   dom.deleteError.textContent = "";
-  dom.deleteDialog.showModal();
+  showDialog(dom.deleteDialog);
 }
 
 function handleDeleteSubmit(event) {
@@ -731,7 +750,7 @@ function openStatusDialog() {
     }
   }
 
-  dom.statusDialog.showModal();
+  showDialog(dom.statusDialog);
 }
 
 /* ---------- Import from the portal ---------- */
@@ -856,6 +875,7 @@ function checkImportItem(item) {
 function showImportStep(step) {
   dom.importSource.hidden = step !== "source";
   dom.importPreview.hidden = step !== "preview";
+  dom.importDialog.scrollTop = 0;
 }
 
 function showImportError(message) {
@@ -869,7 +889,7 @@ function openImportDialog() {
   dom.bookmarkletCode.value = buildBookmarklet();
   dom.bookmarkletLink.href = dom.bookmarkletCode.value;
   showImportStep("source");
-  dom.importDialog.showModal();
+  showDialog(dom.importDialog);
 }
 
 function buildImportRow(item) {
@@ -891,7 +911,7 @@ function showImportPreview(items) {
   dom.importConfirm.disabled = ready === 0;
 
   showImportStep("preview");
-  if (!dom.importDialog.open) dom.importDialog.showModal();
+  if (!dom.importDialog.open) showDialog(dom.importDialog);
 }
 
 function handleImportPreview() {
@@ -966,6 +986,12 @@ function importFromHash() {
 
 /* ---------- Projection ---------- */
 
+/** Pixels of dragging that move the dial by one class. */
+const DIAL_STEP_HEIGHT = 28;
+
+/** Offsets shown on the dial, top to bottom: larger numbers above the centre, smaller below. */
+const DIAL_OFFSETS = [2, 1, 0, -1, -2];
+
 function showProjectionError(message) {
   dom.projectionError.textContent = message;
   dom.projectionError.hidden = false;
@@ -1033,16 +1059,65 @@ function renderProjection() {
   }
 }
 
+/** Redraws the dial around the current number. */
+function renderDial() {
+  const capacity = Number(dom.projectionClasses.max);
+  const sizeClass = { 0: "dial-center", 1: "dial-near", 2: "dial-far" };
+
+  dom.projectionDialValues.replaceChildren(
+    ...DIAL_OFFSETS.map((offset) => {
+      const number = state.projectionClasses + offset;
+      return createElement("span", {
+        className: `dial-item ${sizeClass[Math.abs(offset)]}`,
+        text: number >= 0 && number <= capacity ? String(number) : "",
+        attributes: { "data-offset": String(offset) },
+      });
+    }),
+  );
+
+  dom.projectionDial.setAttribute("aria-valuemax", String(capacity));
+  dom.projectionDial.setAttribute("aria-valuenow", String(state.projectionClasses));
+}
+
+/** Sets the number of classes from the dial or the keypad, keeping both in step. */
+function setProjectionClasses(value) {
+  const capacity = Number(dom.projectionClasses.max);
+  state.projectionClasses = clamp(Math.round(value), 0, capacity);
+  dom.projectionClasses.value = String(state.projectionClasses);
+  renderDial();
+  renderProjection();
+}
+
+/** Switches between the dial and a number box, which opens the phone's number keypad. */
+function setProjectionEditing(editing, { commit = true } = {}) {
+  state.projectionEditing = editing;
+  dom.projectionDial.hidden = editing;
+  dom.projectionClasses.hidden = !editing;
+  setIcon(dom.projectionEditIcon, editing ? "close" : "edit");
+
+  const label = editing ? "Done typing" : "Type a number";
+  dom.projectionEdit.title = label;
+  dom.projectionEdit.setAttribute("aria-label", label);
+
+  if (editing) {
+    dom.projectionClasses.focus();
+    dom.projectionClasses.select();
+  } else if (commit) {
+    const typed = dom.projectionClasses.valueAsNumber;
+    setProjectionClasses(Number.isInteger(typed) ? typed : state.projectionClasses);
+  }
+}
+
 function openProjectionDialog(subject) {
   state.projectionSubject = subject;
 
   const capacity = Math.max(0, state.core.MAX_CLASSES - subject.conducted);
   dom.projectionClasses.max = String(capacity);
-  dom.projectionClasses.value = String(Math.min(1, capacity));
   document.querySelector('input[name="projection-mode"][value="attend"]').checked = true;
-  renderProjection();
+  setProjectionEditing(false, { commit: false });
+  setProjectionClasses(Math.min(1, capacity));
 
-  dom.projectionDialog.showModal();
+  showDialog(dom.projectionDialog);
 }
 
 /** Applies the projected counts to the subject. */
@@ -1062,12 +1137,82 @@ function handleProjectionSubmit(event) {
   refresh();
 }
 
+/** Dragging, scrolling, tapping a neighbouring number, or the keyboard changes the dial. */
+function bindDialEvents() {
+  const dial = dom.projectionDial;
+  const maximum = () => Number(dom.projectionClasses.max);
+  let drag = null;
+  let wheelRemainder = 0;
+
+  dial.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    dial.setPointerCapture(event.pointerId);
+    dial.focus();
+
+    const item = event.target instanceof Element ? event.target.closest(".dial-item") : null;
+    drag = { startY: event.clientY, startValue: state.projectionClasses, tapOffset: item ? Number(item.dataset.offset) : 0, moved: false };
+  });
+
+  dial.addEventListener("pointermove", (event) => {
+    if (!drag) return;
+
+    const steps = Math.round((event.clientY - drag.startY) / DIAL_STEP_HEIGHT);
+    if (steps !== 0) drag.moved = true;
+
+    const next = clamp(drag.startValue + steps, 0, maximum());
+    if (drag.moved && next !== state.projectionClasses) setProjectionClasses(next);
+  });
+
+  dial.addEventListener("pointerup", () => {
+    if (drag && !drag.moved) setProjectionClasses(drag.startValue + drag.tapOffset);
+    drag = null;
+  });
+
+  dial.addEventListener("pointercancel", () => {
+    drag = null;
+  });
+
+  dial.addEventListener(
+    "wheel",
+    (event) => {
+      event.preventDefault();
+      wheelRemainder -= event.deltaY;
+
+      const steps = Math.trunc(wheelRemainder / 40);
+      if (steps === 0) return;
+      wheelRemainder -= steps * 40;
+      setProjectionClasses(state.projectionClasses + steps);
+    },
+    { passive: false },
+  );
+
+  dial.addEventListener("keydown", (event) => {
+    const steps = { ArrowUp: 1, ArrowRight: 1, PageUp: 5, ArrowDown: -1, ArrowLeft: -1, PageDown: -5 }[event.key];
+
+    if (steps !== undefined) setProjectionClasses(state.projectionClasses + steps);
+    else if (event.key === "Home") setProjectionClasses(0);
+    else if (event.key === "End") setProjectionClasses(maximum());
+    else return;
+
+    event.preventDefault();
+  });
+}
+
 function bindProjectionEvents() {
   dom.projectionForm.addEventListener("submit", handleProjectionSubmit);
   dom.projectionForm.addEventListener("change", (event) => {
     if (event.target.name === "projection-mode") renderProjection();
   });
+
   dom.projectionClasses.addEventListener("input", renderProjection);
+  dom.projectionClasses.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    setProjectionEditing(false);
+  });
+  dom.projectionEdit.addEventListener("click", () => setProjectionEditing(!state.projectionEditing));
+
+  bindDialEvents();
 }
 
 /* ---------- Keyboard shortcuts ---------- */
@@ -1124,6 +1269,12 @@ function handleDialogShortcut(event, dialog) {
   }
 
   if (dialog === dom.projectionDialog && !isTypingTarget(event.target)) {
+    if (event.key.toLowerCase() === "e") {
+      event.preventDefault();
+      setProjectionEditing(true);
+      return;
+    }
+
     const mode = { a: "attend", s: "skip" }[event.key.toLowerCase()];
     if (!mode) return;
 
@@ -1171,7 +1322,7 @@ function stepNumberInput(input, direction) {
 
 /** Replaces the browser's own number spinners with two small chevron buttons. */
 function enhanceNumberInputs() {
-  for (const input of document.querySelectorAll('input[type="number"]')) {
+  for (const input of document.querySelectorAll('input[type="number"]:not([data-plain])')) {
     const spinButton = (direction, label) => {
       const button = createElement(
         "button",
@@ -1199,7 +1350,7 @@ function bindStaticEvents() {
 
   dom.aboutButton.addEventListener("click", () => {
     setIcon(dom.aboutIcon, "heart-filled");
-    dom.aboutDialog.showModal();
+    showDialog(dom.aboutDialog);
   });
   dom.aboutDialog.addEventListener("close", () => {
     setIcon(dom.aboutIcon, "heart");
